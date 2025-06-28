@@ -28,7 +28,6 @@ from src.llm import LLM
 
 # Imports for Freeact integration
 from freeact import CodeActAgent, LiteCodeActModel, execution_environment
-from freeact.cli.utils import stream_conversation
 from rich.console import Console
 
 
@@ -222,15 +221,19 @@ class WebSocketConsole(Console):
     def __init__(self, client_sid):
         super().__init__()
         self.client_sid = client_sid
+        self.non_interactive = True  # Flag to indicate non-interactive mode
 
     def print(self, text, **kwargs):
-        # emit_agent already handles sending to all clients
+        # Send output directly to WebSocket
         emit_agent("freeact_output", {"text": str(text)}, log=False)
 
     def input(self, prompt=""):
-        emit_agent("freeact_input_request", {"prompt": prompt}, log=False)
-        # For now, just return empty string as we can't wait for input in this context
-        return ""
+        # In non-interactive mode, don't prompt for input
+        # Just log that input was requested but not provided
+        logger.info(f"FreeAct requested input (non-interactive mode): {prompt}")
+        emit_agent("freeact_info", {"message": "Agent requested input, but running in non-interactive mode"}, log=False)
+        # Return a default value instead of empty string to avoid "non-empty message" errors
+        return "continue"
 
 
 # Function to run the freeact agent in a thread
@@ -269,11 +272,11 @@ def run_freeact_agent(message, project_name, client_sid):
                     agent = CodeActAgent(model=model, executor=executor)
 
                     # Create WebSocket console to redirect output
-                    # Pass the client_sid to the WebSocketConsole
                     ws_console = WebSocketConsole(client_sid)
 
-                    # Run the conversation and send output to WebSocket
-                    await stream_conversation(agent, console=ws_console, initial_message=message)
+                    # Use agent.run() directly instead of stream_conversation
+                    # This avoids the interactive prompts
+                    await agent.run(initial_message=message, console=ws_console)
 
         asyncio.run(run_agent())
         emit_agent("freeact_status", {"status": "completed"}, log=False)
