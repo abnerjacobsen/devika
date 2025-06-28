@@ -305,7 +305,16 @@ def run_freeact_agent(message, project_name, client_sid):
                         emit_agent("freeact_output", {"text": str(turn.content)}, log=False)
                     elif hasattr(turn, "response") and turn.response: # New check
                         logger.debug("FreeAct turn has 'response' attribute.")
-                        emit_agent("freeact_output", {"text": str(turn.response)}, log=False)
+                        # --- START DEBUGGING turn.response ---
+                        response_obj = turn.response
+                        logger.debug(f"FreeAct turn.response type: {type(response_obj)}")
+                        logger.debug(f"FreeAct turn.response content: {response_obj}")
+                        logger.debug(f"FreeAct turn.response attributes: {dir(response_obj)}")
+                        # --- END DEBUGGING turn.response ---
+                        if response_obj is not None and str(response_obj).strip() != "":
+                            emit_agent("freeact_output", {"text": str(response_obj)}, log=False)
+                        else:
+                            logger.debug("FreeAct turn.response is None or empty, not emitting.")
                     elif hasattr(turn, "output") and turn.output: # New check
                         logger.debug("FreeAct turn has 'output' attribute.")
                         emit_agent("freeact_output", {"text": str(turn.output)}, log=False)
