@@ -320,8 +320,35 @@ def run_freeact_agent(message, project_name, client_sid):
                                 response_obj = None
 
                         # Emit the obtained response if available
-                        if response_obj is not None and str(response_obj).strip():
-                            emit_agent("freeact_output", {"text": str(response_obj)}, log=False)
+                        if response_obj:
+                            # If the response object has a `text` field (CodeActAgentResponse)
+                            if hasattr(response_obj, "text"):
+                                emit_agent(
+                                    "freeact_output",
+                                    {"text": str(getattr(response_obj, "text"))},
+                                    log=False,
+                                )
+                                # Send usage statistics if present
+                                usage = getattr(response_obj, "usage", None)
+                                if usage:
+                                    # Convert dataclass-like usage object to a plain dict
+                                    usage_dict = (
+                                        usage
+                                        if isinstance(usage, dict)
+                                        else usage.__dict__
+                                    )
+                                    emit_agent(
+                                        "freeact_usage",
+                                        {"usage": usage_dict},
+                                        log=False,
+                                    )
+                            else:
+                                # Fallback to simple string conversion
+                                emit_agent(
+                                    "freeact_output",
+                                    {"text": str(response_obj)},
+                                    log=False,
+                                )
                         else:
                             logger.debug("FreeAct turn.response is None/empty after invocation, not emitting.")
                     elif hasattr(turn, "output") and turn.output: # New check

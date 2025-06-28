@@ -47,6 +47,7 @@
       socketListener("freeact_status", handleFreeActStatus);
       socketListener("freeact_error", handleFreeActError);
       socketListener("freeact_input_request", handleFreeActInputRequest);
+      socketListener("freeact_usage", handleFreeActUsage);   // 💬 nova estatística
     };
 
     load();
@@ -59,6 +60,7 @@
       socket.off("freeact_status");
       socket.off("freeact_error");
       socket.off("freeact_input_request");
+      socket.off("freeact_usage");
     }
   });
 
@@ -72,6 +74,25 @@
         timestamp: new Date().toISOString()
       }]);
     }
+  }
+
+  /**
+   * Recebe estatísticas de uso (tokens e custo) vindas do backend
+   * e adiciona como uma mensagem do agente, abaixo da resposta.
+   */
+  function handleFreeActUsage(data) {
+    const usage = data.usage || {};
+    const text = `Tokens usados: ${usage.total_tokens ?? "?"} (input: ${usage.input_tokens ?? "?"}, output: ${usage.output_tokens ?? "?"})\nCusto: $${usage.cost ?? "?"}`;
+
+    freeactMessages.update((msgs) => [
+      ...msgs,
+      {
+        from_devika: true,
+        // Exibe em itálico para diferenciar de uma resposta normal
+        message: `_${text}_`,
+        timestamp: new Date().toISOString(),
+      },
+    ]);
   }
 
   function handleFreeActStatus(data) {
