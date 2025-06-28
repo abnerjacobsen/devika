@@ -58,11 +58,12 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 manager = ProjectManager()
 config = Config()
 logger = Logger()
+agent_state_manager = AgentState()
 
 
 # initial socket
 @socketio.on('socket_connect')
-def test_connect(data):
+def test_connect(sid, data):
     print("Socket connected :: ", data)
     emit_agent("socket_response", {"data": "Server Connected"})
 
@@ -89,7 +90,7 @@ def get_messages(request: Request, data: dict = Body(...)):
 
 # Main socket
 @socketio.on('user-message')
-def handle_message(data):
+def handle_message(sid, data):
     logger.info(f"User message: {data}")
     message = data.get('message')
     base_model = data.get('base_model')
@@ -98,17 +99,17 @@ def handle_message(data):
 
     agent = Agent(base_model=base_model, search_engine=search_engine)
 
-    state = AgentState.get_latest_state(project_name)
+    state = agent_state_manager.get_latest_state(project_name)
     if not state:
         thread = Thread(target=lambda: agent.execute(message, project_name))
         thread.start()
     else:
-        if AgentState.is_agent_completed(project_name):
+        if agent_state_manager.is_agent_completed(project_name):
             thread = Thread(target=lambda: agent.subsequent_execute(message, project_name))
             thread.start()
         else:
             emit_agent("info", {"type": "warning", "message": "previous agent doesn't completed it's task."})
-            last_state = AgentState.get_latest_state(project_name)
+            last_state = agent_state_manager.get_latest_state(project_name)
             if last_state["agent_is_active"] or not last_state["completed"]:
                 thread = Thread(target=lambda: agent.execute(message, project_name))
                 thread.start()
@@ -120,7 +121,7 @@ def handle_message(data):
 @route_logger(logger)
 def is_agent_active(request: Request, data: dict = Body(...)):
     project_name = data.get("project_name")
-    is_active = AgentState.is_agent_active(project_name)
+    is_active = agent_state_manager.is_agent_active(project_name)
     return {"is_active": is_active}
 
 
@@ -128,7 +129,7 @@ def is_agent_active(request: Request, data: dict = Body(...)):
 @route_logger(logger)
 def get_agent_state(request: Request, data: dict = Body(...)):
     project_name = data.get("project_name")
-    agent_state = AgentState.get_latest_state(project_name)
+    agent_state = agent_state_manager.get_latest_state(project_name)
     return {"state": agent_state}
 
 
@@ -141,7 +142,7 @@ def browser_snapshot(request: Request, snapshot_path: str):
 @app.get("/api/get-browser-session")
 @route_logger(logger)
 def get_browser_session(request: Request, project_name: str):
-    agent_state = AgentState.get_latest_state(project_name)
+    agent_state = agent_state_manager.get_latest_state(project_name)
     if not agent_state:
         return {"session": None}
     else:
@@ -152,7 +153,7 @@ def get_browser_session(request: Request, project_name: str):
 @app.get("/api/get-terminal-session")
 @route_logger(logger)
 def get_terminal_session(request: Request, project_name: str):
-    agent_state = AgentState.get_latest_state(project_name)
+    agent_state = agent_state_manager.get_latest_state(project_name)
     if not agent_state:
         return {"terminal_state": None}
     else:
@@ -180,7 +181,7 @@ def calculate_tokens(request: Request, data: dict = Body(...)):
 @app.get("/api/token-usage")
 @route_logger(logger)
 def token_usage(request: Request, project_name: str):
-    token_count = AgentState.get_latest_token_usage(project_name)
+    token_count = agent_state_manager.get_latest_token_usage(project_name)
     return {"token_usage": token_count}
 
 
