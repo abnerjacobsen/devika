@@ -12,7 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Body
-from src.socket_instance import socketio, socketio_app, emit_agent
+from src.socket_instance import socketio, emit_agent
 import os
 from threading import Thread
 import tiktoken
@@ -42,10 +42,6 @@ app.add_middleware(
 
 # Register HTTP routers
 app.include_router(project_router)
-
-# Mount Socket.IO ASGI application
-app.mount("/ws", socketio_app)
-
 
 TIKTOKEN_ENC = tiktoken.get_encoding("cl100k_base")
 
@@ -204,6 +200,18 @@ def get_settings(request: Request):
 @route_logger(logger)
 def status(request: Request):
     return {"status": "server is running!"}
+
+# --------------------------------------------------------------------------- #
+# Integrate Socket.IO at the *root* of the ASGI application instead of `/ws`.
+# We first finish registering every FastAPI route on the existing ``app`` and
+# only then wrap it with the Socket.IO ASGIApp.  This way the frontend can
+# connect using the same base URL it already expects.
+# --------------------------------------------------------------------------- #
+from socketio import ASGIApp as _ASGIApp  # local import to avoid circular deps
+
+# NOTE: re-assigning the variable ``app`` is safe because all route decorators
+# above have already executed and attached their endpoints.
+app = _ASGIApp(socketio, other_asgi_app=app)  # type: ignore[assignment]
 
 if __name__ == "__main__":
     logger.info("Devika is up and running!")

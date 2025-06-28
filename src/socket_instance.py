@@ -6,7 +6,6 @@ Migrated from ``Flask-SocketIO`` to ``python-socketio`` so it can be mounted
 directly on a FastAPI (ASGI) application.  The public symbol ``socketio`` is
 kept to avoid changes in the rest of the code base.
 """
-
 import asyncio
 import socketio as _socketio  # python-socketio
 
@@ -18,11 +17,7 @@ socketio = _socketio.AsyncServer(
     cors_allowed_origins="*",
 )
 
-# Optional: expose an ASGI app that can be `mount`ed in FastAPI.
-#   from src.socket_instance import socketio_app
-#   app.mount("/ws", socketio_app)
-socketio_app = _socketio.ASGIApp(socketio)
-
+# Logger instance for socket events
 logger = Logger()
 
 
