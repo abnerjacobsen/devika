@@ -1,9 +1,12 @@
 from functools import wraps
 
 from fastlogging import LogInit
-from flask import request
-
 from src.config import Config
+
+# Typing / runtime imports for FastAPI
+from typing import Any
+from fastapi import Request
+from starlette.responses import Response as StarletteResponse
 
 
 class Logger:
@@ -51,27 +54,42 @@ def route_logger(logger: Logger):
 
         @wraps(func)
         def wrapper(*args, **kwargs):
+            # Extract FastAPI Request object if available
+            request_obj: Request | None = None
+            for value in list(args) + list(kwargs.values()):
+                if isinstance(value, Request):
+                    request_obj = value  # type: ignore[assignment]
+                    break
+
+            path = request_obj.url.path if request_obj else "UNKNOWN_PATH"
+            method = request_obj.method if request_obj else "UNKNOWN_METHOD"
+
             # Log entry point
             if log_enabled:
-                logger.info(f"{request.path} {request.method}")
+                logger.info(f"{path} {method}")
 
             # Call the actual route function
             response = func(*args, **kwargs)
 
-            from werkzeug.wrappers import Response
-
             # Log exit point, including response summary if possible
             try:
                 if log_enabled:
-                    if isinstance(response, Response) and response.direct_passthrough:
-                        logger.debug(f"{request.path} {request.method} - Response: File response")
-                    else:
-                        response_summary = response.get_data(as_text=True)
-                        if 'settings' in request.path:
-                            response_summary = "*** Settings are not logged ***"
-                        logger.debug(f"{request.path} {request.method} - Response: {response_summary}")
+                    if isinstance(response, StarletteResponse):
+                        # Attempt to read response body (may be empty for StreamingResponse)
+                        try:
+                            body = (
+                                response.body.decode("utf-8")
+                                if isinstance(response.body, (bytes, bytearray))
+                                else str(response.body)
+                            )
+                        except Exception:  # pragma: no cover
+                            body = "File/Streaming response"
+
+                        if "settings" in path:
+                            body = "*** Settings are not logged ***"
+                        logger.debug(f"{path} {method} - Response: {body}")
             except Exception as e:
-                logger.exception(f"{request.path} {request.method} - {e})")
+                logger.exception(f"{path} {method} - {e})")
 
             return response
         return wrapper

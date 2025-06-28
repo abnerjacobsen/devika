@@ -1,5 +1,3 @@
-flask
-flask-cors
 toml
 urllib3
 requests
@@ -23,7 +21,6 @@ netlify-py
 Markdown
 xhtml2pdf
 mistralai
-Flask-SocketIO
 eventlet
 groq
 duckduckgo-search
@@ -31,3 +28,7 @@ orjson
 gevent
 gevent-websocket
 curl_cffi
+fastapi
+uvicorn[standard]
+python-socketio
+python-multipart

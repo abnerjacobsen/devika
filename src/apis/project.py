@@ -1,62 +1,94 @@
-from flask import blueprints, request, jsonify, send_file, make_response
-from werkzeug.utils import secure_filename
+from fastapi import APIRouter, Query, Body, Request, Depends, HTTPException
+from fastapi.responses import JSONResponse, FileResponse
+from typing import Dict, Any, Optional, List
+from pydantic import BaseModel
+import os
+import re
+from pathlib import Path
+
 from src.logger import Logger, route_logger
 from src.config import Config
 from src.project import ProjectManager
 from ..state import AgentState
 
-import os
-
-project_bp = blueprints.Blueprint("project", __name__)
+# Create router instead of blueprint
+router = APIRouter()
 
 logger = Logger()
 manager = ProjectManager()
 
+# Pydantic models for request validation
+class ProjectCreate(BaseModel):
+    project_name: str
+
+class ProjectDelete(BaseModel):
+    project_name: str
+
+# Helper function to replace secure_filename
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize a filename to ensure it's safe for filesystem operations.
+    Similar to werkzeug's secure_filename but simpler.
+    """
+    # Remove potentially dangerous characters
+    filename = re.sub(r'[^\w\s.-]', '', filename)
+    # Replace spaces with underscores
+    filename = filename.replace(' ', '_')
+    # Remove leading/trailing dots or spaces
+    filename = filename.strip('. ')
+    # Ensure we have a valid filename
+    if not filename:
+        filename = "unnamed_project"
+    return filename
 
 # Project APIs
 
-@project_bp.route("/api/get-project-files", methods=["GET"])
+@router.get("/api/get-project-files")
 @route_logger(logger)
-def project_files():
-    project_name = secure_filename(request.args.get("project_name"))
-    files = manager.get_project_files(project_name)  
-    return jsonify({"files": files})
+async def project_files(request: Request, project_name: str = Query(...)):
+    safe_name = sanitize_filename(project_name)
+    files = manager.get_project_files(safe_name)  
+    return {"files": files}
 
-@project_bp.route("/api/create-project", methods=["POST"])
+@router.post("/api/create-project")
 @route_logger(logger)
-def create_project():
-    data = request.json
-    project_name = data.get("project_name")
-    manager.create_project(secure_filename(project_name))
-    return jsonify({"message": "Project created"})
+async def create_project(request: Request, project_data: ProjectCreate):
+    project_name = sanitize_filename(project_data.project_name)
+    manager.create_project(project_name)
+    return {"message": "Project created"}
 
-
-@project_bp.route("/api/delete-project", methods=["POST"])
+@router.post("/api/delete-project")
 @route_logger(logger)
-def delete_project():
-    data = request.json
-    project_name = secure_filename(data.get("project_name"))
+async def delete_project(request: Request, project_data: ProjectDelete):
+    project_name = sanitize_filename(project_data.project_name)
     manager.delete_project(project_name)
     AgentState().delete_state(project_name)
-    return jsonify({"message": "Project deleted"})
+    return {"message": "Project deleted"}
 
-
-@project_bp.route("/api/download-project", methods=["GET"])
+@router.get("/api/download-project")
 @route_logger(logger)
-def download_project():
-    project_name = secure_filename(request.args.get("project_name"))
-    manager.project_to_zip(project_name)
-    project_path = manager.get_zip_path(project_name)
-    return send_file(project_path, as_attachment=False)
+async def download_project(request: Request, project_name: str = Query(...)):
+    safe_name = sanitize_filename(project_name)
+    manager.project_to_zip(safe_name)
+    project_path = manager.get_zip_path(safe_name)
+    return FileResponse(
+        path=project_path,
+        filename=f"{safe_name}.zip",
+        media_type="application/zip"
+    )
 
-
-@project_bp.route("/api/download-project-pdf", methods=["GET"])
+@router.get("/api/download-project-pdf")
 @route_logger(logger)
-def download_project_pdf():
-    project_name = secure_filename(request.args.get("project_name"))
+async def download_project_pdf(request: Request, project_name: str = Query(...)):
+    safe_name = sanitize_filename(project_name)
     pdf_dir = Config().get_pdfs_dir()
-    pdf_path = os.path.join(pdf_dir, f"{project_name}.pdf")
-
-    response = make_response(send_file(pdf_path))
-    response.headers['Content-Type'] = 'project_bplication/pdf'
-    return response
+    pdf_path = os.path.join(pdf_dir, f"{safe_name}.pdf")
+    
+    if not os.path.exists(pdf_path):
+        raise HTTPException(status_code=404, detail="PDF file not found")
+        
+    return FileResponse(
+        path=pdf_path,
+        filename=f"{safe_name}.pdf",
+        media_type="application/pdf"
+    )
