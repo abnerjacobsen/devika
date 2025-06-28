@@ -52,45 +52,94 @@ def route_logger(logger: Logger):
 
     def decorator(func):
 
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            # Extract FastAPI Request object if available
-            request_obj: Request | None = None
-            for value in list(args) + list(kwargs.values()):
-                if isinstance(value, Request):
-                    request_obj = value  # type: ignore[assignment]
-                    break
+        import asyncio
 
-            path = request_obj.url.path if request_obj else "UNKNOWN_PATH"
-            method = request_obj.method if request_obj else "UNKNOWN_METHOD"
+        def _extract_request(*a, **kw) -> "Request | None":
+            """
+            Try to obtain a FastAPI Request object from positional/keyword args.
+            """
+            if "request" in kw and isinstance(kw["request"], Request):
+                return kw["request"]  # type: ignore[return-value]
+            for val in a:
+                if isinstance(val, Request):
+                    return val  # type: ignore[return-value]
+            return None
 
-            # Log entry point
-            if log_enabled:
-                logger.info(f"{path} {method}")
+        def _log_entry_exit(
+            req: "Request | None",
+            resp: Any,
+            err: Exception | None = None,
+        ) -> None:
+            if not log_enabled:
+                return
 
-            # Call the actual route function
-            response = func(*args, **kwargs)
+            path = req.url.path if req else "NO_PATH"
+            method = req.method if req else "NO_METHOD"
 
-            # Log exit point, including response summary if possible
-            try:
-                if log_enabled:
-                    if isinstance(response, StarletteResponse):
-                        # Attempt to read response body (may be empty for StreamingResponse)
+            if err is None:
+                # normal exit
+                try:
+                    if isinstance(resp, StarletteResponse):
+                        body: str
                         try:
-                            body = (
-                                response.body.decode("utf-8")
-                                if isinstance(response.body, (bytes, bytearray))
-                                else str(response.body)
-                            )
-                        except Exception:  # pragma: no cover
-                            body = "File/Streaming response"
+                            # May be bytes / str / memoryview
+                            raw = resp.body
+                            body = raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw)
+                        except Exception:
+                            body = "Streaming/File response"
+                    else:
+                        body = str(resp)
 
-                        if "settings" in path:
-                            body = "*** Settings are not logged ***"
-                        logger.debug(f"{path} {method} - Response: {body}")
-            except Exception as e:
-                logger.exception(f"{path} {method} - {e})")
+                    if "settings" in path:
+                        body = "*** Settings are not logged ***"
 
-            return response
-        return wrapper
+                    logger.debug(f"{path} {method} - Response: {body}")
+                except Exception as e:  # pragma: no cover
+                    logger.exception(f"{path} {method} - Logging response failed: {e}")
+            else:
+                logger.exception(f"{path} {method} - {err}")
+
+        # ------------------------------------------------------------------ #
+        # Select wrapper type (sync / async) depending on decorated function #
+        # ------------------------------------------------------------------ #
+
+        if asyncio.iscoroutinefunction(func):
+
+            @wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                request_obj = _extract_request(*args, **kwargs)
+
+                # Entry log
+                if log_enabled and request_obj:
+                    logger.info(f"{request_obj.url.path} {request_obj.method}")
+
+                try:
+                    response = await func(*args, **kwargs)
+                    _log_entry_exit(request_obj, response)
+                    return response
+                except Exception as e:  # pragma: no cover
+                    _log_entry_exit(request_obj, None, err=e)
+                    raise
+
+            return async_wrapper
+
+        # ---- synchronous route ------------------------------------------- #
+
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            # Extract FastAPI Request object if available
+            request_obj = _extract_request(*args, **kwargs)
+
+            if log_enabled and request_obj:
+                logger.info(f"{request_obj.url.path} {request_obj.method}")
+
+            try:
+                response = func(*args, **kwargs)
+                _log_entry_exit(request_obj, response)
+                return response
+            except Exception as e:  # pragma: no cover
+                _log_entry_exit(request_obj, None, err=e)
+                raise
+
+        return sync_wrapper
     return decorator

@@ -52,7 +52,6 @@ TIKTOKEN_ENC = tiktoken.get_encoding("cl100k_base")
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 manager = ProjectManager()
-AgentState = AgentState()
 config = Config()
 logger = Logger()
 
@@ -65,6 +64,7 @@ def test_connect(data):
 
 
 @app.get("/api/data")
+@route_logger(logger)
 def data(request: Request):
     project = manager.get_project_list()
     models = LLM().list_models()
@@ -73,7 +73,11 @@ def data(request: Request):
 
 
 @app.post("/api/messages")
-def get_messages(data: dict = Body(...)):
+@route_logger(logger)
+def get_messages(request: Request, data: dict = Body(...)):
+    """
+    Return all messages for the requested project.
+    """
     project_name = data.get("project_name")
     messages = manager.get_messages(project_name)
     return {"messages": messages}
@@ -110,7 +114,7 @@ def handle_message(data):
 
 @app.post("/api/is-agent-active")
 @route_logger(logger)
-def is_agent_active(data: dict = Body(...)):
+def is_agent_active(request: Request, data: dict = Body(...)):
     project_name = data.get("project_name")
     is_active = AgentState.is_agent_active(project_name)
     return {"is_active": is_active}
@@ -118,7 +122,7 @@ def is_agent_active(data: dict = Body(...)):
 
 @app.post("/api/get-agent-state")
 @route_logger(logger)
-def get_agent_state(data: dict = Body(...)):
+def get_agent_state(request: Request, data: dict = Body(...)):
     project_name = data.get("project_name")
     agent_state = AgentState.get_latest_state(project_name)
     return {"state": agent_state}
@@ -126,13 +130,13 @@ def get_agent_state(data: dict = Body(...)):
 
 @app.get("/api/get-browser-snapshot")
 @route_logger(logger)
-def browser_snapshot(snapshot_path: str):
+def browser_snapshot(request: Request, snapshot_path: str):
     return FileResponse(snapshot_path, filename=os.path.basename(snapshot_path))
 
 
 @app.get("/api/get-browser-session")
 @route_logger(logger)
-def get_browser_session(project_name: str):
+def get_browser_session(request: Request, project_name: str):
     agent_state = AgentState.get_latest_state(project_name)
     if not agent_state:
         return {"session": None}
@@ -143,7 +147,7 @@ def get_browser_session(project_name: str):
 
 @app.get("/api/get-terminal-session")
 @route_logger(logger)
-def get_terminal_session(project_name: str):
+def get_terminal_session(request: Request, project_name: str):
     agent_state = AgentState.get_latest_state(project_name)
     if not agent_state:
         return {"terminal_state": None}
@@ -154,7 +158,7 @@ def get_terminal_session(project_name: str):
 
 @app.post("/api/run-code")
 @route_logger(logger)
-def run_code(data: dict = Body(...)):
+def run_code(request: Request, data: dict = Body(...)):
     project_name = data.get("project_name")
     code = data.get("code")
     # TODO: Implement code execution logic
@@ -163,7 +167,7 @@ def run_code(data: dict = Body(...)):
 
 @app.post("/api/calculate-tokens")
 @route_logger(logger)
-def calculate_tokens(data: dict = Body(...)):
+def calculate_tokens(request: Request, data: dict = Body(...)):
     prompt = data.get("prompt")
     tokens = len(TIKTOKEN_ENC.encode(prompt))
     return {"token_usage": tokens}
@@ -171,7 +175,7 @@ def calculate_tokens(data: dict = Body(...)):
 
 @app.get("/api/token-usage")
 @route_logger(logger)
-def token_usage(project_name: str):
+def token_usage(request: Request, project_name: str):
     token_count = AgentState.get_latest_token_usage(project_name)
     return {"token_usage": token_count}
 
@@ -184,20 +188,21 @@ def real_time_logs():
 
 @app.post("/api/settings")
 @route_logger(logger)
-def set_settings(data: dict = Body(...)):
+def set_settings(request: Request, data: dict = Body(...)):
     config.update_config(data)
     return {"message": "Settings updated"}
 
 
 @app.get("/api/settings")
 @route_logger(logger)
-def get_settings():
+def get_settings(request: Request):
     configs = config.get_config()
     return {"settings": configs}
 
 
 @app.get("/api/status")
-def status():
+@route_logger(logger)
+def status(request: Request):
     return {"status": "server is running!"}
 
 if __name__ == "__main__":
