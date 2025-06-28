@@ -110,11 +110,24 @@ class DuckDuckGoSearch:
                 raise TimeoutError("Duckduckgo timed out error")
 
     def duck(self, query):
+        # ------------------------------------------------------------------ #
+        # 1) Obter o token `vqd` necessário para a segunda requisição        #
+        # ------------------------------------------------------------------ #
         resp = self._get_url("POST", "https://duckduckgo.com/", data={"q": query})
+
+        # Se a chamada falhar retorna None –  precisamos tratar para evitar
+        # AttributeError ao fazer `.index()` em `None`.
+        if resp is None:  # pragma: no cover
+            raise RuntimeError("DuckDuckGo returned an empty response while fetching vqd token")
+
         vqd = self.extract_vqd(resp)
+        if not vqd:  # pragma: no cover
+            raise RuntimeError("Unable to extract vqd token from DuckDuckGo response")
 
         params = {"q": query, "kl": 'en-us', "p": "1", "s": "0", "df": "", "vqd": vqd, "ex": ""}
         resp = self._get_url("GET", "https://links.duckduckgo.com/d.js", params)
+        if resp is None:  # pragma: no cover
+            raise RuntimeError("DuckDuckGo returned an empty response for search results")
         page_data = self.text_extract_json(resp)
 
         results = []
@@ -140,6 +153,8 @@ class DuckDuckGoSearch:
 
     @staticmethod
     def extract_vqd(html_bytes: bytes) -> str:
+        if html_bytes is None:  # pragma: no cover
+            return ""
         patterns = [(b'vqd="', 5, b'"'), (b"vqd=", 4, b"&"), (b"vqd='", 5, b"'")]
         for start_pattern, offset, end_pattern in patterns:
             try:
@@ -148,6 +163,8 @@ class DuckDuckGoSearch:
                 return html_bytes[start:end].decode()
             except ValueError:
                 continue
+        # Se nenhum padrão encontrado devolve string vazia para que o caller trate
+        return ""
 
     @staticmethod
     def text_extract_json(html_bytes):

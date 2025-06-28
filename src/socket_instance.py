@@ -22,16 +22,33 @@ logger = Logger()
 
 
 def emit_agent(channel, content, log=True):
+    """
+    Envia uma mensagem via Socket.IO garantindo compatibilidade quando chamada
+    de *threads* que não possuem um loop `asyncio` ativo.
+
+    • Se houver loop de eventos em execução → agenda a coroutine com
+      `asyncio.create_task()`.
+    • Caso contrário (ex.: threads ‑ Agent executa em `threading.Thread`) →
+      cria um loop temporário via `asyncio.run()`.
+    """
     try:
-        # ``python-socketio`` `emit` is a coroutine under AsyncServer.
+        # ``python-socketio`` devolve uma *coroutine* em modo ASGI.
         coro = socketio.emit(channel, content)
-        if asyncio.iscoroutine(coro):
-            # Schedule the coroutine to run in the background; no await needed.
-            asyncio.create_task(coro)
-        # else: sync path (unlikely with AsyncServer)
+
+        # Detecta loop em execução.
+        try:
+            _loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # Sem loop → estamos provavelmente numa thread.
+            asyncio.run(coro)
+        else:
+            # Loop existente → agenda normalmente.
+            _loop.create_task(coro)
+
         if log:
             logger.info(f"SOCKET {channel} MESSAGE: {content}")
         return True
+
     except Exception as e:
         logger.error(f"SOCKET {channel} ERROR: {str(e)}")
         return False
