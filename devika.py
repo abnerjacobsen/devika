@@ -276,7 +276,8 @@ def run_freeact_agent(message, project_name, client_sid):
 
                     # Use agent.run() directly instead of stream_conversation
                     # This avoids the interactive prompts
-                    await agent.run(initial_message=message, console=ws_console)
+                    # O método run espera o parâmetro "user_query"
+                    await agent.run(user_query=message, console=ws_console)
 
         asyncio.run(run_agent())
         emit_agent("freeact_status", {"status": "completed"}, log=False)
