@@ -17,6 +17,7 @@ import os
 from threading import Thread
 import tiktoken
 import asyncio
+import inspect
 
 from src.apis.project import router as project_router
 from src.config import Config
@@ -306,10 +307,15 @@ def run_freeact_agent(message, project_name, client_sid):
                     elif hasattr(turn, "response") and turn.response: # New check
                         logger.debug("FreeAct turn has 'response' attribute (method or value).")
                         response_obj = turn.response
-                        # If it is callable (method), invoke it to get the actual result
+                        # Se for um método/callable, execute-o e trate coroutines corretamente
                         if callable(response_obj):
                             try:
-                                response_obj = response_obj()
+                                _tmp = response_obj()
+                                # _tmp pode ser coroutine; se for, aguarde sua execução
+                                if asyncio.iscoroutine(_tmp):
+                                    response_obj = await _tmp
+                                else:
+                                    response_obj = _tmp
                             except Exception as exc:
                                 logger.error(f"Error invoking turn.response(): {exc}")
                                 response_obj = None
