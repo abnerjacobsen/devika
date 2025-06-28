@@ -265,7 +265,8 @@ def run_freeact_agent(message, project_name, client_sid):
                 async with env.code_executor() as executor:
                     model = LiteCodeActModel(
                         model_name="gpt-4o-mini",
-                        api_key=os.getenv("OPENAI_API_KEY"),
+                        # Usa a chave configurada no sistema Devika
+                        api_key=config.get_openai_api_key(),
                         reasoning_effort="low",
                         drop_params=True,
                         skill_sources=skill_sources,
