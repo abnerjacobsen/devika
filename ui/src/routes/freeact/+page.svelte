@@ -9,7 +9,7 @@
   import { serverStatus } from "$lib/store";
   import { socketListener, emitMessage } from "$lib/sockets";
   import { checkServerStatus, fetchInitialData } from "$lib/api";
-  import { socket } from "$lib/api";
+  import { socket, API_BASE_URL } from "$lib/api";
 
   // FreeAct specific stores
   import { writable } from "svelte/store";
@@ -120,7 +120,7 @@
       isSending.set(true);
       
       // Send the message to the backend
-      const response = await fetch("/api/freeact-message", {
+      const response = await fetch(`${API_BASE_URL}/api/freeact-message`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
