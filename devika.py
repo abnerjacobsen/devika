@@ -273,12 +273,10 @@ def run_freeact_agent(message, project_name, client_sid):
                     )
                     agent = CodeActAgent(model=model, executor=executor)
 
-                    # Create WebSocket console to redirect output
-                    ws_console = WebSocketConsole(client_sid)
-
-                    # agent.run() returns a CodeActAgentTurn object, not a coroutine
-                    # Remove await and capture the turn object
-                    turn = agent.run(user_query=message, console=ws_console)
+                    # Executa o agente sem injetar um Console customizado.
+                    # Isso evita que o objeto seja serializado em chamadas
+                    # internas da biblioteca (problema JSON serializable).
+                    turn = agent.run(user_query=message)
                     
                     logger.debug(f"FreeAct turn object type: {type(turn)}")
                     logger.debug(f"FreeAct turn object attributes: {dir(turn)}")
