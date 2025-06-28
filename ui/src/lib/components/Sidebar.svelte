@@ -9,6 +9,12 @@
       tooltip: "Home",
       route: "/",
     },
+    // FreeAct entry (between Home and Settings)
+    {
+      icon: Icons.FREEACT,
+      tooltip: "FreeAct",
+      route: "/freeact",
+    },
     {
       icon: Icons.SETTINGS,
       tooltip: "Settings",

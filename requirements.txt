@@ -32,3 +32,4 @@ fastapi
 uvicorn[standard]
 python-socketio
 python-multipart
+freeact

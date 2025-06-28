@@ -16,6 +16,7 @@ from src.socket_instance import socketio, emit_agent
 import os
 from threading import Thread
 import tiktoken
+import asyncio
 
 from src.apis.project import router as project_router
 from src.config import Config
@@ -24,6 +25,11 @@ from src.project import ProjectManager
 from src.state import AgentState
 from src.agents import Agent
 from src.llm import LLM
+
+# Imports for Freeact integration
+from freeact import CodeActAgent, LiteCodeActModel, execution_environment
+from freeact.cli.utils import stream_conversation
+from rich.console import Console
 
 
 app = FastAPI()
@@ -209,6 +215,94 @@ def get_settings(request: Request):
 @route_logger(logger)
 def status(request: Request):
     return {"status": "server is running!"}
+
+
+# Custom WebSocket Console for Freeact
+class WebSocketConsole(Console):
+    def __init__(self, client_sid):
+        super().__init__()
+        self.client_sid = client_sid
+
+    def print(self, text, **kwargs):
+        # emit_agent already handles sending to all clients
+        emit_agent("freeact_output", {"text": str(text)}, log=False)
+
+    def input(self, prompt=""):
+        emit_agent("freeact_input_request", {"prompt": prompt}, log=False)
+        # For now, just return empty string as we can't wait for input in this context
+        return ""
+
+
+# Function to run the freeact agent in a thread
+def run_freeact_agent(message, project_name, client_sid):
+    try:
+        logger.info(f"Starting Freeact agent with message: {message} for sid: {client_sid}")
+        emit_agent("freeact_status", {"status": "starting"}, log=False)
+
+        async def run_agent():
+            async with execution_environment(
+                ipybox_tag="ghcr.io/gradion-ai/ipybox:basic",
+            ) as env:
+                async with env.code_provider() as provider:
+                    mcp_tool_names = await provider.register_mcp_servers(
+                        {
+                            "pubmed": {
+                                "command": "uvx",
+                                "args": ["--quiet", "pubmedmcp@0.1.3"],
+                                "env": {"UV_PYTHON": "3.12"},
+                            }
+                        }
+                    )
+                    skill_sources = await provider.get_sources(
+                        module_names=["freeact_skills.search.google.stream.api"],
+                        mcp_tool_names=mcp_tool_names,
+                    )
+
+                async with env.code_executor() as executor:
+                    model = LiteCodeActModel(
+                        model_name="gpt-4o-mini",
+                        api_key=os.getenv("OPENAI_API_KEY"),
+                        reasoning_effort="low",
+                        drop_params=True,
+                        skill_sources=skill_sources,
+                    )
+                    agent = CodeActAgent(model=model, executor=executor)
+
+                    # Create WebSocket console to redirect output
+                    # Pass the client_sid to the WebSocketConsole
+                    ws_console = WebSocketConsole(client_sid)
+
+                    # Run the conversation and send output to WebSocket
+                    await stream_conversation(agent, console=ws_console, initial_message=message)
+
+        asyncio.run(run_agent())
+        emit_agent("freeact_status", {"status": "completed"}, log=False)
+
+    except Exception as e:
+        logger.error(f"Freeact agent error: {str(e)}")
+        emit_agent("freeact_error", {"error": str(e)}, log=False)
+
+
+# New endpoint for Freeact agent
+@app.post("/api/freeact-message")
+@route_logger(logger)
+def freeact_message(request: Request, data: dict = Body(...)):
+    message = data.get("message")
+    project_name = data.get("project_name")
+    client_sid = data.get("sid")  # Expect sid in the request body
+
+    if not message or not project_name or not client_sid:  # Check for sid
+        return {"error": "Missing message, project_name, or sid"}
+
+    logger.info(f"Received Freeact message: {message} for project {project_name} from sid: {client_sid}")
+
+    # Start a thread to run the freeact agent
+    # Pass the client_sid to the thread target
+    thread = Thread(target=lambda: run_freeact_agent(message, project_name, client_sid))
+    thread.start()
+
+    return {"status": "Freeact agent started"}
+
 
 # --------------------------------------------------------------------------- #
 # Integrate Socket.IO at the *root* of the ASGI application instead of `/ws`.
