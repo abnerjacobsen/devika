@@ -81,14 +81,9 @@ class Agent:
 
         knowledge_base = KnowledgeBase()
 
-        if self.engine == "bing":
-            web_search = BingSearch()
-        elif self.engine == "google":
-            web_search = GoogleSearch()
-        else:
-            web_search = DuckDuckGoSearch()
-
-        self.logger.info(f"\nSearch Engine :: {self.engine}")
+        # Inicializa o mecanismo de busca primário conforme configuração do usuário
+        primary_engine = self.engine
+        self.logger.info(f"\nPrimary Search Engine :: {primary_engine}")
 
         for query in queries:
             query = query.strip().lower()
@@ -101,17 +96,56 @@ class Agent:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-            web_search.search(query)
+            # Lista de mecanismos de busca em ordem de prioridade
+            search_engines = []
+            
+            # Primeiro adiciona o mecanismo escolhido pelo usuário
+            if primary_engine == "bing":
+                search_engines.append(("bing", BingSearch()))
+            elif primary_engine == "google":
+                search_engines.append(("google", GoogleSearch()))
+            else:
+                search_engines.append(("duckduckgo", DuckDuckGoSearch()))
+            
+            # Adiciona os outros mecanismos como fallback (se não forem o primário)
+            if primary_engine != "google":
+                search_engines.append(("google", GoogleSearch()))
+            if primary_engine != "bing":
+                search_engines.append(("bing", BingSearch()))
 
-            link = web_search.get_first_link()
+            # Tenta cada mecanismo de busca até que um funcione
+            link = None
+            for engine_name, web_search in search_engines:
+                try:
+                    self.logger.info(f"Trying search engine: {engine_name}")
+                    web_search.search(query)
+                    link = web_search.get_first_link()
+                    
+                    if link:
+                        self.logger.info(f"Search successful with {engine_name}: found link")
+                        break
+                    else:
+                        self.logger.warning(f"Search with {engine_name} returned no links")
+                except Exception as e:
+                    self.logger.error(f"Error with {engine_name} search: {str(e)}")
+                    # Continue para o próximo mecanismo de busca
+
             print("\nLink :: ", link, '\n')
             if not link:
+                self.logger.warning(f"All search engines failed for query: {query}")
+                # Adiciona uma entrada vazia para esta query e continua
+                results[query] = "No search results found. All search engines failed."
                 continue
-            browser, raw, data = loop.run_until_complete(self.open_page(project_name, link))
-            emit_agent("screenshot", {"data": raw, "project_name": project_name}, False)
-            results[query] = self.formatter.execute(data, project_name)
-
-            self.logger.info(f"got the search results for : {query}")
+                
+            try:
+                browser, raw, data = loop.run_until_complete(self.open_page(project_name, link))
+                emit_agent("screenshot", {"data": raw, "project_name": project_name}, False)
+                results[query] = self.formatter.execute(data, project_name)
+                self.logger.info(f"Got search results for: {query}")
+            except Exception as e:
+                self.logger.error(f"Error processing search results: {str(e)}")
+                results[query] = f"Error processing search results: {str(e)}"
+            
             # knowledge_base.add_knowledge(tag=query, contents=results[query])
         return results
 
