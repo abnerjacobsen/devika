@@ -11,6 +11,7 @@ init_devika()
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Body
 from src.socket_instance import socketio, socketio_app, emit_agent
 import os
 from threading import Thread
@@ -65,7 +66,7 @@ def test_connect(data):
 
 @app.get("/api/data")
 @route_logger(logger)
-async def data(request: Request):
+def data(request: Request):
     project = manager.get_project_list()
     models = LLM().list_models()
     search_engines = ["Bing", "Google", "DuckDuckGo"]
@@ -73,8 +74,7 @@ async def data(request: Request):
 
 
 @app.post("/api/messages")
-async def get_messages(request: Request):
-    data = await request.json()
+def get_messages(data: dict = Body(...)):
     project_name = data.get("project_name")
     messages = manager.get_messages(project_name)
     return JSONResponse({"messages": messages})
@@ -111,8 +111,7 @@ def handle_message(data):
 
 @app.post("/api/is-agent-active")
 @route_logger(logger)
-async def is_agent_active(request: Request):
-    data = await request.json()
+def is_agent_active(data: dict = Body(...)):
     project_name = data.get("project_name")
     is_active = AgentState.is_agent_active(project_name)
     return JSONResponse({"is_active": is_active})
@@ -120,8 +119,7 @@ async def is_agent_active(request: Request):
 
 @app.post("/api/get-agent-state")
 @route_logger(logger)
-async def get_agent_state(request: Request):
-    data = await request.json()
+def get_agent_state(data: dict = Body(...)):
     project_name = data.get("project_name")
     agent_state = AgentState.get_latest_state(project_name)
     return JSONResponse({"state": agent_state})
@@ -129,13 +127,13 @@ async def get_agent_state(request: Request):
 
 @app.get("/api/get-browser-snapshot")
 @route_logger(logger)
-async def browser_snapshot(snapshot_path: str):
+def browser_snapshot(snapshot_path: str):
     return FileResponse(snapshot_path, filename=os.path.basename(snapshot_path))
 
 
 @app.get("/api/get-browser-session")
 @route_logger(logger)
-async def get_browser_session(project_name: str):
+def get_browser_session(project_name: str):
     agent_state = AgentState.get_latest_state(project_name)
     if not agent_state:
         return JSONResponse({"session": None})
@@ -146,7 +144,7 @@ async def get_browser_session(project_name: str):
 
 @app.get("/api/get-terminal-session")
 @route_logger(logger)
-async def get_terminal_session(project_name: str):
+def get_terminal_session(project_name: str):
     agent_state = AgentState.get_latest_state(project_name)
     if not agent_state:
         return JSONResponse({"terminal_state": None})
@@ -157,8 +155,7 @@ async def get_terminal_session(project_name: str):
 
 @app.post("/api/run-code")
 @route_logger(logger)
-async def run_code(request: Request):
-    data = await request.json()
+def run_code(data: dict = Body(...)):
     project_name = data.get("project_name")
     code = data.get("code")
     # TODO: Implement code execution logic
@@ -167,8 +164,7 @@ async def run_code(request: Request):
 
 @app.post("/api/calculate-tokens")
 @route_logger(logger)
-async def calculate_tokens(request: Request):
-    data = await request.json()
+def calculate_tokens(data: dict = Body(...)):
     prompt = data.get("prompt")
     tokens = len(TIKTOKEN_ENC.encode(prompt))
     return JSONResponse({"token_usage": tokens})
@@ -176,35 +172,34 @@ async def calculate_tokens(request: Request):
 
 @app.get("/api/token-usage")
 @route_logger(logger)
-async def token_usage(project_name: str):
+def token_usage(project_name: str):
     token_count = AgentState.get_latest_token_usage(project_name)
     return JSONResponse({"token_usage": token_count})
 
 
 @app.get("/api/logs")
-async def real_time_logs():
+def real_time_logs():
     log_file = logger.read_log_file()
     return JSONResponse({"logs": log_file})
 
 
 @app.post("/api/settings")
 @route_logger(logger)
-async def set_settings(request: Request):
-    data = await request.json()
+def set_settings(data: dict = Body(...)):
     config.update_config(data)
     return JSONResponse({"message": "Settings updated"})
 
 
 @app.get("/api/settings")
 @route_logger(logger)
-async def get_settings():
+def get_settings():
     configs = config.get_config()
     return JSONResponse({"settings": configs})
 
 
 @app.get("/api/status")
 @route_logger(logger)
-async def status():
+def status():
     return JSONResponse({"status": "server is running!"})
 
 if __name__ == "__main__":

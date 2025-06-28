@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Query, Body, Request, Depends, HTTPException
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi import APIRouter, Query, HTTPException
+from fastapi.responses import FileResponse
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel
 import os
@@ -45,21 +45,21 @@ def sanitize_filename(filename: str) -> str:
 
 @router.get("/api/get-project-files")
 @route_logger(logger)
-async def project_files(request: Request, project_name: str = Query(...)):
+def project_files(project_name: str = Query(...)):
     safe_name = sanitize_filename(project_name)
     files = manager.get_project_files(safe_name)  
     return {"files": files}
 
 @router.post("/api/create-project")
 @route_logger(logger)
-async def create_project(request: Request, project_data: ProjectCreate):
+def create_project(project_data: ProjectCreate):
     project_name = sanitize_filename(project_data.project_name)
     manager.create_project(project_name)
     return {"message": "Project created"}
 
 @router.post("/api/delete-project")
 @route_logger(logger)
-async def delete_project(request: Request, project_data: ProjectDelete):
+def delete_project(project_data: ProjectDelete):
     project_name = sanitize_filename(project_data.project_name)
     manager.delete_project(project_name)
     AgentState().delete_state(project_name)
@@ -67,7 +67,7 @@ async def delete_project(request: Request, project_data: ProjectDelete):
 
 @router.get("/api/download-project")
 @route_logger(logger)
-async def download_project(request: Request, project_name: str = Query(...)):
+def download_project(project_name: str = Query(...)):
     safe_name = sanitize_filename(project_name)
     manager.project_to_zip(safe_name)
     project_path = manager.get_zip_path(safe_name)
@@ -79,7 +79,7 @@ async def download_project(request: Request, project_name: str = Query(...)):
 
 @router.get("/api/download-project-pdf")
 @route_logger(logger)
-async def download_project_pdf(request: Request, project_name: str = Query(...)):
+def download_project_pdf(project_name: str = Query(...)):
     safe_name = sanitize_filename(project_name)
     pdf_dir = Config().get_pdfs_dir()
     pdf_path = os.path.join(pdf_dir, f"{safe_name}.pdf")
