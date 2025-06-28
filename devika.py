@@ -279,10 +279,25 @@ def run_freeact_agent(message, project_name, client_sid):
                     turn = agent.run(user_query=message, console=ws_console)
                     
                     # Process the turn object and send relevant messages via WebSocket
-                    if turn and hasattr(turn, 'messages'):
+                    if not turn:
+                        return
+
+                    # 1) Caso o objeto traga lista de mensagens estruturadas
+                    if hasattr(turn, "messages") and turn.messages:
                         for msg in turn.messages:
-                            emit_agent("freeact_output", {"text": str(msg)}, log=False)
-                    elif turn:
+                            # Cada msg pode ser dict ou str
+                            emit_agent(
+                                "freeact_output",
+                                {"text": msg if isinstance(msg, str) else str(msg)},
+                                log=False,
+                            )
+                    # 2) Algumas versões expõem 'answer' ou 'content'
+                    elif hasattr(turn, "answer"):
+                        emit_agent("freeact_output", {"text": str(turn.answer)}, log=False)
+                    elif hasattr(turn, "content"):
+                        emit_agent("freeact_output", {"text": str(turn.content)}, log=False)
+                    # 3) Fallback – converte todo o objeto para string legível
+                    else:
                         emit_agent("freeact_output", {"text": str(turn)}, log=False)
 
         asyncio.run(run_agent())
