@@ -274,10 +274,16 @@ def run_freeact_agent(message, project_name, client_sid):
                     # Create WebSocket console to redirect output
                     ws_console = WebSocketConsole(client_sid)
 
-                    # Use agent.run() directly instead of stream_conversation
-                    # This avoids the interactive prompts
-                    # O método run espera o parâmetro "user_query"
-                    await agent.run(user_query=message, console=ws_console)
+                    # agent.run() returns a CodeActAgentTurn object, not a coroutine
+                    # Remove await and capture the turn object
+                    turn = agent.run(user_query=message, console=ws_console)
+                    
+                    # Process the turn object and send relevant messages via WebSocket
+                    if turn and hasattr(turn, 'messages'):
+                        for msg in turn.messages:
+                            emit_agent("freeact_output", {"text": str(msg)}, log=False)
+                    elif turn:
+                        emit_agent("freeact_output", {"text": str(turn)}, log=False)
 
         asyncio.run(run_agent())
         emit_agent("freeact_status", {"status": "completed"}, log=False)
