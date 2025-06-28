@@ -278,12 +278,17 @@ def run_freeact_agent(message, project_name, client_sid):
                     # Remove await and capture the turn object
                     turn = agent.run(user_query=message, console=ws_console)
                     
+                    logger.debug(f"FreeAct turn object type: {type(turn)}")
+                    logger.debug(f"FreeAct turn object attributes: {dir(turn)}")
+
                     # Process the turn object and send relevant messages via WebSocket
                     if not turn:
+                        logger.debug("FreeAct turn object is None.")
                         return
 
                     # 1) Caso o objeto traga lista de mensagens estruturadas
                     if hasattr(turn, "messages") and turn.messages:
+                        logger.debug("FreeAct turn has 'messages' attribute.")
                         for msg in turn.messages:
                             # Cada msg pode ser dict ou str
                             emit_agent(
@@ -292,12 +297,30 @@ def run_freeact_agent(message, project_name, client_sid):
                                 log=False,
                             )
                     # 2) Algumas versões expõem 'answer' ou 'content'
-                    elif hasattr(turn, "answer"):
+                    elif hasattr(turn, "answer") and turn.answer:
+                        logger.debug("FreeAct turn has 'answer' attribute.")
                         emit_agent("freeact_output", {"text": str(turn.answer)}, log=False)
-                    elif hasattr(turn, "content"):
+                    elif hasattr(turn, "content") and turn.content:
+                        logger.debug("FreeAct turn has 'content' attribute.")
                         emit_agent("freeact_output", {"text": str(turn.content)}, log=False)
+                    elif hasattr(turn, "response") and turn.response: # New check
+                        logger.debug("FreeAct turn has 'response' attribute.")
+                        emit_agent("freeact_output", {"text": str(turn.response)}, log=False)
+                    elif hasattr(turn, "output") and turn.output: # New check
+                        logger.debug("FreeAct turn has 'output' attribute.")
+                        emit_agent("freeact_output", {"text": str(turn.output)}, log=False)
+                    elif hasattr(turn, "result") and turn.result: # New check
+                        logger.debug("FreeAct turn has 'result' attribute.")
+                        emit_agent("freeact_output", {"text": str(turn.result)}, log=False)
+                    elif callable(getattr(turn, "get_response", None)): # New check for method
+                        logger.debug("FreeAct turn has 'get_response()' method.")
+                        emit_agent("freeact_output", {"text": str(turn.get_response())}, log=False)
+                    elif callable(getattr(turn, "get_output", None)): # New check for method
+                        logger.debug("FreeAct turn has 'get_output()' method.")
+                        emit_agent("freeact_output", {"text": str(turn.get_output())}, log=False)
                     # 3) Fallback – converte todo o objeto para string legível
                     else:
+                        logger.debug("FreeAct turn has no known content attributes, falling back to str(turn).")
                         emit_agent("freeact_output", {"text": str(turn)}, log=False)
 
         asyncio.run(run_agent())
