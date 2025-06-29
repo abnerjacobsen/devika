@@ -84,6 +84,16 @@ class Config:
     def get_netlify_api_key(self):
         return self.config["API_KEYS"]["NETLIFY"]
 
+    def get_firecrawl_api_key(self):
+        """
+        Return the API key for the Firecrawl service.
+        The key must be present under the [API_KEYS] section in the TOML config:
+
+        [API_KEYS]
+        FIRECRAWL = "<YOUR_FIRECRAWL_API_KEY>"
+        """
+        return self.config["API_KEYS"]["FIRECRAWL"]
+
     def get_sqlite_db(self):
         return self.config["STORAGE"]["SQLITE_DB"]
 

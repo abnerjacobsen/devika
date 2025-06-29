@@ -259,13 +259,22 @@ def run_freeact_agent(message, project_name, client_sid):
                 ipybox_tag="ghcr.io/gradion-ai/ipybox:basic",
             ) as env:
                 async with env.code_provider() as provider:
+                    # Register both **PubMed** and **Firecrawl** MCP servers
                     mcp_tool_names = await provider.register_mcp_servers(
                         {
                             "pubmed": {
                                 "command": "uvx",
                                 "args": ["--quiet", "pubmedmcp@0.1.3"],
                                 "env": {"UV_PYTHON": "3.12"},
-                            }
+                            },
+                            "firecrawl": {
+                                "command": "npx",
+                                "args": ["-y", "firecrawl-mcp"],
+                                "env": {
+                                    # Pass the API key from Devika configuration
+                                    "FIRECRAWL_API_KEY": config.get_firecrawl_api_key()
+                                },
+                            },
                         }
                     )
                     skill_sources = await provider.get_sources(
