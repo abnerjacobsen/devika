@@ -50,9 +50,12 @@
           output !== previousState.output ||
           title !== previousState.title
         ) {
-          // addCommandAndOutput(command, output, title);
+          // Atualiza o título se o elemento existir
           if (title) {
-            document.getElementById("freeact-terminal-title").innerText = title; // Changed ID
+            const titleEl = document.getElementById("freeact-terminal-title");
+            if (titleEl) {
+              titleEl.innerText = title;
+            }
           }
           terminal.reset();
           terminal.write(`$ ${command}\r\n\r\n${output}\r\n`);
