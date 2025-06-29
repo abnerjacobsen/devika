@@ -13,6 +13,7 @@
 
   // FreeAct specific stores
   import { writable } from "svelte/store";
+  import { afterUpdate } from "svelte";
   const freeactMessages = writable([]);
   const freeactStatus = writable("idle"); // idle, active, error
   const isSending = writable(false);
@@ -75,6 +76,17 @@
       }]);
     }
   }
+
+  /* ------------------------------------------------------------------ */
+  /* Auto-scroll da área de mensagens                                   */
+  /* ------------------------------------------------------------------ */
+  let endOfMessages; // âncora no final da lista
+  afterUpdate(() => {
+    // Sempre que o store for atualizado, rola até a âncora
+    if (endOfMessages) {
+      endOfMessages.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  });
 
   /**
    * Recebe estatísticas de uso (tokens e custo) vindas do backend
@@ -180,7 +192,8 @@
   <div class="flex-1 overflow-hidden">
     <Resizable.PaneGroup class="h-full" direction="vertical">
       <!-- Messages area -->
-      <Resizable.Pane class="min-h-[200px] overflow-y-auto p-4">
+      <!-- flex-1 garante ocupar todo o espaço vertical disponível -->
+      <Resizable.Pane class="flex-1 min-h-[200px] overflow-y-auto p-4">
         <div class="flex flex-col gap-4 max-w-4xl mx-auto">
           {#if $freeactMessages.length === 0}
             <div class="text-center text-muted-foreground p-8">
@@ -213,6 +226,8 @@
                 </div>
               </div>
             {/each}
+            <!-- âncora para auto-scroll -->
+            <div bind:this={endOfMessages}></div>
           {/if}
         </div>
       </Resizable.Pane>
