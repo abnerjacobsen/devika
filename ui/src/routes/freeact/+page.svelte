@@ -69,14 +69,13 @@
       }
 
       // Set up socket listeners for FreeAct
-      socketListener("freeact_output", handleFreeActOutput);
       socketListener("freeact_status", handleFreeActStatus);
       socketListener("freeact_error", handleFreeActError);
       socketListener("freeact_input_request", handleFreeActInputRequest);
       socketListener("freeact_usage", handleFreeActUsage);   // 💬 estatística
 
       // novos eventos específicos
-      socketListener("freeact_model_response", handleFreeActOutput);
+      socketListener("freeact_model_response", handleFreeActModelResponse);
       socketListener("freeact_code_action", handleCodeAction);
       socketListener("freeact_execution_result", handleExecutionResult);
     };
@@ -143,7 +142,7 @@
   }
 
   // Handle FreeAct messages from WebSocket
-  function handleFreeActOutput(data) {
+  function handleFreeActModelResponse(data) {
     const text = data.text;
     if (text) {
       // Verificar se o usuário está próximo do final antes de atualizar
