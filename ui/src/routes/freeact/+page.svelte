@@ -219,8 +219,12 @@
     <Resizable.PaneGroup class="h-full" direction="vertical">
       <!-- Messages area -->
       <!-- flex-1 garante ocupar todo o espaço vertical disponível -->
-      <Resizable.Pane bind:this={messagesContainer} class="flex-1 min-h-[200px] overflow-y-auto p-4">
-        <div class="flex flex-col gap-4 max-w-4xl mx-auto">
+      <Resizable.Pane class="flex-1 min-h-[200px] overflow-hidden p-4">
+        <!-- div que realmente receberá o scroll -->
+        <div
+          bind:this={messagesContainer}
+          class="flex flex-col gap-4 max-w-4xl mx-auto overflow-y-auto h-full"
+        >
           {#if $freeactMessages.length === 0}
             <div class="text-center text-muted-foreground p-8">
               <p>No messages yet. Start a conversation with FreeAct!</p>
