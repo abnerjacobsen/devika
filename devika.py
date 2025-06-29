@@ -17,7 +17,6 @@ import os
 from threading import Thread
 import tiktoken
 import asyncio
-import inspect
 
 from src.apis.project import router as project_router
 from src.config import Config
@@ -29,6 +28,7 @@ from src.llm import LLM
 
 # Imports for Freeact integration
 from freeact import CodeActAgent, LiteCodeActModel, execution_environment
+from freeact.agent import CodeActModelTurn, CodeExecution  # Importando classes para processar o stream
 from rich.console import Console
 
 
@@ -297,11 +297,46 @@ def run_freeact_agent(message, project_name, client_sid):
                     # Isso evita que o objeto seja serializado em chamadas
                     # internas da biblioteca (problema JSON serializable).
                     try:
-                        # a chamada é bloqueante; executamos em thread e aplicamos timeout
-                        turn = await asyncio.wait_for(
-                            asyncio.to_thread(agent.run, user_query=message),
+                        # Em vez de processar o resultado final, processamos o stream de atividades
+                        # para separar Model response, Code action e Execution result
+                        agent_turn = agent.run(user_query=message)
+                        
+                        # Aplicamos timeout ao stream completo
+                        async for activity in asyncio.wait_for(
+                            agent_turn.stream(),
                             timeout=FREEACT_TIMEOUT,
-                        )
+                        ):
+                            # Processamos cada tipo de atividade e enviamos eventos específicos
+                            if isinstance(activity, CodeActModelTurn):
+                                # Obtemos a resposta do modelo (pode ser um coroutine)
+                                response = await activity.response() if asyncio.iscoroutinefunction(activity.response) else activity.response()
+                                
+                                # Enviamos o texto da resposta do modelo
+                                if response.text:
+                                    emit_agent("freeact_model_response", {"text": response.text}, log=False)
+                                
+                                # Se houver código, enviamos como Code action
+                                if response.code:
+                                    emit_agent("freeact_code_action", {"code": response.code}, log=False)
+                                
+                                # Enviamos estatísticas de uso se disponíveis
+                                if hasattr(response, "usage") and response.usage:
+                                    usage_dict = response.usage if isinstance(response.usage, dict) else response.usage.__dict__
+                                    emit_agent("freeact_usage", {"usage": usage_dict}, log=False)
+                                    
+                            elif isinstance(activity, CodeExecution):
+                                # Processamos o resultado da execução
+                                result = await activity.result() if asyncio.iscoroutinefunction(activity.result) else activity.result()
+                                
+                                # Enviamos o resultado da execução
+                                emit_agent("freeact_execution_result", {"result": result.text}, log=False)
+                                
+                                # Se houver imagens produzidas, enviamos informação
+                                if hasattr(result, "images") and result.images:
+                                    paths = [str(path) for path in result.images.keys()]
+                                    if paths:
+                                        emit_agent("freeact_images", {"paths": paths}, log=False)
+
                     except asyncio.TimeoutError:
                         logger.error(
                             "FreeAct execution exceeded the configured "
@@ -320,96 +355,6 @@ def run_freeact_agent(message, project_name, client_sid):
                             log=False,
                         )
                         return
-                    
-                    logger.debug(f"FreeAct turn object type: {type(turn)}")
-                    logger.debug(f"FreeAct turn object attributes: {dir(turn)}")
-
-                    # Process the turn object and send relevant messages via WebSocket
-                    if not turn:
-                        logger.debug("FreeAct turn object is None.")
-                        return
-
-                    # 1) Caso o objeto traga lista de mensagens estruturadas
-                    if hasattr(turn, "messages") and turn.messages:
-                        logger.debug("FreeAct turn has 'messages' attribute.")
-                        for msg in turn.messages:
-                            # Cada msg pode ser dict ou str
-                            emit_agent(
-                                "freeact_output",
-                                {"text": msg if isinstance(msg, str) else str(msg)},
-                                log=False,
-                            )
-                    # 2) Algumas versões expõem 'answer' ou 'content'
-                    elif hasattr(turn, "answer") and turn.answer:
-                        logger.debug("FreeAct turn has 'answer' attribute.")
-                        emit_agent("freeact_output", {"text": str(turn.answer)}, log=False)
-                    elif hasattr(turn, "content") and turn.content:
-                        logger.debug("FreeAct turn has 'content' attribute.")
-                        emit_agent("freeact_output", {"text": str(turn.content)}, log=False)
-                    elif hasattr(turn, "response") and turn.response: # New check
-                        logger.debug("FreeAct turn has 'response' attribute (method or value).")
-                        response_obj = turn.response
-                        # Se for um método/callable, execute-o e trate coroutines corretamente
-                        if callable(response_obj):
-                            try:
-                                _tmp = response_obj()
-                                # _tmp pode ser coroutine; se for, aguarde sua execução
-                                if asyncio.iscoroutine(_tmp):
-                                    response_obj = await _tmp
-                                else:
-                                    response_obj = _tmp
-                            except Exception as exc:
-                                logger.error(f"Error invoking turn.response(): {exc}")
-                                response_obj = None
-
-                        # Emit the obtained response if available
-                        if response_obj:
-                            # If the response object has a `text` field (CodeActAgentResponse)
-                            if hasattr(response_obj, "text"):
-                                emit_agent(
-                                    "freeact_output",
-                                    {"text": str(getattr(response_obj, "text"))},
-                                    log=False,
-                                )
-                                # Send usage statistics if present
-                                usage = getattr(response_obj, "usage", None)
-                                if usage:
-                                    # Convert dataclass-like usage object to a plain dict
-                                    usage_dict = (
-                                        usage
-                                        if isinstance(usage, dict)
-                                        else usage.__dict__
-                                    )
-                                    emit_agent(
-                                        "freeact_usage",
-                                        {"usage": usage_dict},
-                                        log=False,
-                                    )
-                            else:
-                                # Fallback to simple string conversion
-                                emit_agent(
-                                    "freeact_output",
-                                    {"text": str(response_obj)},
-                                    log=False,
-                                )
-                        else:
-                            logger.debug("FreeAct turn.response is None/empty after invocation, not emitting.")
-                    elif hasattr(turn, "output") and turn.output: # New check
-                        logger.debug("FreeAct turn has 'output' attribute.")
-                        emit_agent("freeact_output", {"text": str(turn.output)}, log=False)
-                    elif hasattr(turn, "result") and turn.result: # New check
-                        logger.debug("FreeAct turn has 'result' attribute.")
-                        emit_agent("freeact_output", {"text": str(turn.result)}, log=False)
-                    elif callable(getattr(turn, "get_response", None)): # New check for method
-                        logger.debug("FreeAct turn has 'get_response()' method.")
-                        emit_agent("freeact_output", {"text": str(turn.get_response())}, log=False)
-                    elif callable(getattr(turn, "get_output", None)): # New check for method
-                        logger.debug("FreeAct turn has 'get_output()' method.")
-                        emit_agent("freeact_output", {"text": str(turn.get_output())}, log=False)
-                    # 3) Fallback – converte todo o objeto para string legível
-                    else:
-                        logger.debug("FreeAct turn has no known content attributes, falling back to str(turn).")
-                        emit_agent("freeact_output", {"text": str(turn)}, log=False)
 
         asyncio.run(run_agent())
         emit_agent("freeact_status", {"status": "completed"}, log=False)

@@ -73,7 +73,12 @@
       socketListener("freeact_status", handleFreeActStatus);
       socketListener("freeact_error", handleFreeActError);
       socketListener("freeact_input_request", handleFreeActInputRequest);
-      socketListener("freeact_usage", handleFreeActUsage);   // 💬 nova estatística
+      socketListener("freeact_usage", handleFreeActUsage);   // 💬 estatística
+
+      // novos eventos específicos
+      socketListener("freeact_model_response", handleFreeActOutput);
+      socketListener("freeact_code_action", handleCodeAction);
+      socketListener("freeact_execution_result", handleExecutionResult);
     };
 
     load();
@@ -82,13 +87,49 @@
   onDestroy(() => {
     // Clean up socket listeners
     if (socket.connected) {
-      socket.off("freeact_output");
+      socket.off("freeact_model_response");
+      socket.off("freeact_code_action");
+      socket.off("freeact_execution_result");
       socket.off("freeact_status");
       socket.off("freeact_error");
       socket.off("freeact_input_request");
       socket.off("freeact_usage");
     }
   });
+
+  /* ------------------------------------------------------------------ */
+  /* Terminal output helper (uses agentState so widget auto-updates)     */
+  /* ------------------------------------------------------------------ */
+  import { agentState } from "$lib/store";
+
+  function appendToTerminal(text, type = "Output") {
+    agentState.update((state) => {
+      const term = state?.terminal_session ?? {
+        command: "",
+        output: "",
+        title: "FreeAct Terminal",
+      };
+
+      const newOutput =
+        (term.output ? term.output + "\n" : "") +
+        (type === "Code"
+          ? `\n🔧 Code action:\n${text}\n`
+          : `\n✅ Execution result:\n${text}\n`);
+
+      return {
+        ...state,
+        terminal_session: { ...term, command: type, output: newOutput },
+      };
+    });
+  }
+
+  function handleCodeAction(data) {
+    if (data?.code) appendToTerminal(data.code, "Code");
+  }
+
+  function handleExecutionResult(data) {
+    if (data?.result) appendToTerminal(data.result, "Output");
+  }
 
   // Função para rolar para o final da conversa, quando necessário
   function scrollMessages() {
