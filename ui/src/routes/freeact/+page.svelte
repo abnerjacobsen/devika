@@ -6,6 +6,9 @@
   import MessageInput from "$lib/components/MessageInput.svelte";
   import * as Resizable from "$lib/components/ui/resizable/index.js";
 
+  /* FreeAct-specific widgets (copies of the originals) */
+  import FreeActBrowserWidget from "$lib/components/FreeActBrowserWidget.svelte";
+  import FreeActTerminalWidget from "$lib/components/FreeActTerminalWidget.svelte";
   import { serverStatus } from "$lib/store";
   import { socketListener, emitMessage } from "$lib/sockets";
   import { checkServerStatus, fetchInitialData } from "$lib/api";
@@ -237,7 +240,8 @@
 
   <!-- Main content area -->
   <div class="flex-1 overflow-hidden">
-    <Resizable.PaneGroup class="h-full" direction="vertical">
+    <!-- Horizontal splitter: conversation | browser + terminal -->
+    <Resizable.PaneGroup class="h-full" direction="horizontal">
       <!-- Messages area -->
       <!-- flex-1 garante ocupar todo o espaço vertical disponível -->
       <Resizable.Pane class="flex-1 min-h-[200px] overflow-hidden p-4">
@@ -284,6 +288,12 @@
             <!-- Removida a âncora para auto-scroll, agora usamos scrollTop/scrollHeight -->
           {/if}
         </div>
+      </Resizable.Pane>
+
+      <!-- Browser + Terminal widgets (FreeAct specific copies) -->
+      <Resizable.Pane class="flex flex-col gap-4 w-full max-w-[50%] p-2">
+        <FreeActBrowserWidget />
+        <FreeActTerminalWidget />
       </Resizable.Pane>
     </Resizable.PaneGroup>
   </div>
