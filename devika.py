@@ -315,6 +315,9 @@ def run_freeact_agent(message, project_name, client_sid):
 
                                     # Enviamos o texto da resposta do modelo
                                     if response.text:
+                                        logger.debug(
+                                            f"[FreeAct] Model response text len={len(response.text)}"
+                                        )
                                         emit_agent(
                                             "freeact_model_response",
                                             {"text": response.text},
@@ -323,6 +326,9 @@ def run_freeact_agent(message, project_name, client_sid):
 
                                     # Se houver código, enviamos como Code action
                                     if response.code:
+                                        logger.debug(
+                                            f"[FreeAct] Code action detected len={len(response.code)}"
+                                        )
                                         emit_agent(
                                             "freeact_code_action",
                                             {"code": response.code},
@@ -335,6 +341,9 @@ def run_freeact_agent(message, project_name, client_sid):
                                             response.usage
                                             if isinstance(response.usage, dict)
                                             else response.usage.__dict__
+                                        )
+                                        logger.debug(
+                                            f"[FreeAct] Usage stats emitted: {usage_dict}"
                                         )
                                         emit_agent(
                                             "freeact_usage",
@@ -350,12 +359,27 @@ def run_freeact_agent(message, project_name, client_sid):
                                         else activity.result()
                                     )
 
-                                    # Enviamos o resultado da execução
-                                    emit_agent(
-                                        "freeact_execution_result",
-                                        {"result": result.text},
-                                        log=False,
-                                    )
+                                    # Extrai texto da execução de forma robusta
+                                    exec_text: str | None = None
+                                    if hasattr(result, "text") and result.text:
+                                        exec_text = result.text
+                                    elif hasattr(result, "stdout") and result.stdout:
+                                        exec_text = result.stdout
+                                    else:
+                                        # Fallback para representação em string
+                                        exec_text = str(result) if result is not None else None
+
+                                    # Enviamos o resultado da execução se existir
+                                    if exec_text:
+                                        logger.debug(
+                                            "[FreeAct] Execution result len="
+                                            f"{len(exec_text)}"
+                                        )
+                                        emit_agent(
+                                            "freeact_execution_result",
+                                            {"result": exec_text},
+                                            log=False,
+                                        )
 
                                     # Se houver imagens produzidas, enviamos informação
                                     if hasattr(result, "images") and result.images:

@@ -103,6 +103,8 @@
   import { agentState } from "$lib/store";
 
   function appendToTerminal(text, type = "Output") {
+    // DEBUG: track every update to terminal widget
+    console.debug("[FreeAct] appendToTerminal", { type, preview: (text ?? "").slice(0, 120) });
     agentState.update((state) => {
       const term = state?.terminal_session ?? {
         command: "",
@@ -124,10 +126,12 @@
   }
 
   function handleCodeAction(data) {
+    console.debug("[FreeAct] handleCodeAction event", data);
     if (data?.code) appendToTerminal(data.code, "Code");
   }
 
   function handleExecutionResult(data) {
+    console.debug("[FreeAct] handleExecutionResult event", data);
     if (data?.result) appendToTerminal(data.result, "Output");
   }
 
