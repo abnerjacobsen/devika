@@ -13,13 +13,14 @@
 
   // FreeAct specific stores
   import { writable } from "svelte/store";
-  import { afterUpdate } from "svelte";
+  // Remover afterUpdate que estava forçando scroll sempre
   const freeactMessages = writable([]);
   const freeactStatus = writable("idle"); // idle, active, error
   const isSending = writable(false);
 
   let selectedProject = "";
   let messageInput = "";
+  let messagesContainer; // Referência ao container de mensagens para scroll
 
   // Get the selected project from localStorage
   onMount(() => {
@@ -65,28 +66,35 @@
     }
   });
 
+  // Função para rolar para o final da conversa, quando necessário
+  function scrollMessages() {
+    if (messagesContainer) {
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+  }
+
   // Handle FreeAct messages from WebSocket
   function handleFreeActOutput(data) {
     const text = data.text;
     if (text) {
+      // Verificar se o usuário está próximo do final antes de atualizar
+      const isAtBottom = messagesContainer && 
+        (messagesContainer.scrollHeight - messagesContainer.scrollTop <= messagesContainer.clientHeight + 50);
+      
       freeactMessages.update(msgs => [...msgs, {
         from_devika: true,
         message: text,
         timestamp: new Date().toISOString()
       }]);
+
+      // Só fazer auto-scroll se o usuário já estiver próximo do final
+      // ou se for uma mensagem do agente
+      if (isAtBottom) {
+        // Usar setTimeout para garantir que o DOM foi atualizado
+        setTimeout(scrollMessages, 0);
+      }
     }
   }
-
-  /* ------------------------------------------------------------------ */
-  /* Auto-scroll da área de mensagens                                   */
-  /* ------------------------------------------------------------------ */
-  let endOfMessages; // âncora no final da lista
-  afterUpdate(() => {
-    // Sempre que o store for atualizado, rola até a âncora
-    if (endOfMessages) {
-      endOfMessages.scrollIntoView({ behavior: "smooth", block: "end" });
-    }
-  });
 
   /**
    * Recebe estatísticas de uso (tokens e custo) vindas do backend
@@ -95,6 +103,10 @@
   function handleFreeActUsage(data) {
     const usage = data.usage || {};
     const text = `Tokens usados: ${usage.total_tokens ?? "?"} (input: ${usage.input_tokens ?? "?"}, output: ${usage.output_tokens ?? "?"})\nCusto: $${usage.cost ?? "?"}`;
+
+    // Verificar se o usuário está próximo do final antes de atualizar
+    const isAtBottom = messagesContainer && 
+      (messagesContainer.scrollHeight - messagesContainer.scrollTop <= messagesContainer.clientHeight + 50);
 
     freeactMessages.update((msgs) => [
       ...msgs,
@@ -105,6 +117,11 @@
         timestamp: new Date().toISOString(),
       },
     ]);
+
+    // Só fazer auto-scroll se o usuário já estiver próximo do final
+    if (isAtBottom) {
+      setTimeout(scrollMessages, 0);
+    }
   }
 
   function handleFreeActStatus(data) {
@@ -139,12 +156,21 @@
       return;
     }
 
+    // Verificar se o usuário está próximo do final antes de atualizar
+    const isAtBottom = messagesContainer && 
+      (messagesContainer.scrollHeight - messagesContainer.scrollTop <= messagesContainer.clientHeight + 50);
+
     // Add user message to the conversation
     freeactMessages.update(msgs => [...msgs, {
       from_devika: false,
       message: messageInput,
       timestamp: new Date().toISOString()
     }]);
+
+    // Só fazer auto-scroll se o usuário já estiver próximo do final
+    if (isAtBottom) {
+      setTimeout(scrollMessages, 0);
+    }
 
     // Get the socket ID for tracking the specific connection
     const socketId = socket.id;
@@ -193,7 +219,7 @@
     <Resizable.PaneGroup class="h-full" direction="vertical">
       <!-- Messages area -->
       <!-- flex-1 garante ocupar todo o espaço vertical disponível -->
-      <Resizable.Pane class="flex-1 min-h-[200px] overflow-y-auto p-4">
+      <Resizable.Pane bind:this={messagesContainer} class="flex-1 min-h-[200px] overflow-y-auto p-4">
         <div class="flex flex-col gap-4 max-w-4xl mx-auto">
           {#if $freeactMessages.length === 0}
             <div class="text-center text-muted-foreground p-8">
@@ -226,8 +252,7 @@
                 </div>
               </div>
             {/each}
-            <!-- âncora para auto-scroll -->
-            <div bind:this={endOfMessages}></div>
+            <!-- Removida a âncora para auto-scroll, agora usamos scrollTop/scrollHeight -->
           {/if}
         </div>
       </Resizable.Pane>
