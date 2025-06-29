@@ -143,17 +143,29 @@
 
   // Handle FreeAct messages from WebSocket
   function handleFreeActModelResponse(data) {
-    const text = data.text;
-    if (text) {
+    console.debug("[FreeAct] handleFreeActModelResponse event", data);
+    try {
+      const text = data?.text;
+
+      if (!text) {
+        console.warn("[FreeAct] model_response missing text payload", data);
+        return;
+      }
+
       // Verificar se o usuário está próximo do final antes de atualizar
-      const isAtBottom = messagesContainer && 
-        (messagesContainer.scrollHeight - messagesContainer.scrollTop <= messagesContainer.clientHeight + 50);
-      
-      freeactMessages.update(msgs => [...msgs, {
-        from_devika: true,
-        message: text,
-        timestamp: new Date().toISOString()
-      }]);
+      const isAtBottom =
+        messagesContainer &&
+        messagesContainer.scrollHeight - messagesContainer.scrollTop <=
+          messagesContainer.clientHeight + 50;
+
+      freeactMessages.update((msgs) => [
+        ...msgs,
+        {
+          from_devika: true,
+          message: text,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
 
       // Só fazer auto-scroll se o usuário já estiver próximo do final
       // ou se for uma mensagem do agente
@@ -161,6 +173,8 @@
         // Usar setTimeout para garantir que o DOM foi atualizado
         setTimeout(scrollMessages, 0);
       }
+    } catch (err) {
+      console.error("[FreeAct] Error handling model response", err, data);
     }
   }
 
