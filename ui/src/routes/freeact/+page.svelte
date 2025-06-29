@@ -11,6 +11,67 @@
   import { checkServerStatus, fetchInitialData } from "$lib/api";
   import { socket, API_BASE_URL } from "$lib/api";
 
+  /* ------------------------------------------------------------------ */
+  /* Markdown rendering helpers                                          */
+  /* ------------------------------------------------------------------ */
+  import DOMPurify from "dompurify";
+
+  /**
+   * Render **very** basic markdown to HTML.
+   * – Suporta **bold**, *italic* / _italic_, quebras de linha,
+   *   listas com “- ” ou “* ” e listas numeradas “1. ”.
+   * – Sanitiza com DOMPurify para evitar XSS.
+   */
+  function renderMarkdown(md = "") {
+    if (!md) return "";
+
+    // Escapa HTML antes de substituir markdown
+    let html = md
+      // Quebras de linha primeiro para preservar estrutura
+      .replace(/\n\s*\n/g, "</p><p>") // parágrafos
+      .replace(/\n/g, "<br />")
+
+      // Bold **text**
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      // Italic *text* ou _text_
+      .replace(/(\*|_)(.+?)\1/g, "<em>$2</em>");
+
+    // Listas bullets (- , * )
+    html = html.replace(
+      /(<br\s*\/?>)*(?:\s*[-*]\s.+(?:<br\s*\/?>|$))+?/g,
+      (match) => {
+        const items = match
+          .trim()
+          .split(/<br\s*\/?>/g)
+          .filter((l) => l.trim().match(/^[-*]\s/))
+          .map((l) => `<li>${l.trim().replace(/^[-*]\s/, "")}</li>`)
+          .join("");
+        return `<ul>${items}</ul>`;
+      }
+    );
+
+    // Listas numeradas
+    html = html.replace(
+      /(<br\s*\/?>)*\s*(?:\d+\.\s.+(?:<br\s*\/?>|$))+?/g,
+      (match) => {
+        const items = match
+          .trim()
+          .split(/<br\s*\/?>/g)
+          .filter((l) => l.trim().match(/^\d+\.\s/))
+          .map((l) => `<li>${l.trim().replace(/^\d+\.\s/, "")}</li>`)
+          .join("");
+        return `<ol>${items}</ol>`;
+      }
+    );
+
+    // Envelopa em <p> se não tiver parágrafos
+    if (!html.startsWith("<p>")) {
+      html = `<p>${html}</p>`;
+    }
+
+    return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
+  }
+
   // FreeAct specific stores
   import { writable } from "svelte/store";
   // Remover afterUpdate que estava forçando scroll sempre
@@ -252,7 +313,11 @@
                   </div>
                 </div>
                 <div class="whitespace-pre-wrap">
-                  {message.message}
+                  {#if message.from_devika}
+                    {@html renderMarkdown(message.message)}
+                  {:else}
+                    {message.message}
+                  {/if}
                 </div>
               </div>
             {/each}
