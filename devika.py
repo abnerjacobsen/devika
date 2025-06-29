@@ -66,6 +66,17 @@ config = Config()
 logger = Logger()
 agent_state_manager = AgentState()
 
+# --------------------------------------------------------------------------- #
+# Configuration
+# --------------------------------------------------------------------------- #
+# FreeAct can take longer than standard LLM inference because it may need to
+# install packages, download data sets or run heavy Python code inside the
+# ipybox container.  We therefore allow a bigger timeout window (default
+# 300 s).  The value can be overridden via the `FREEACT_TIMEOUT` environment
+# variable without changing code.
+FREEACT_TIMEOUT: int = int(os.getenv("FREEACT_TIMEOUT", "300"))
+
+
 
 # initial socket
 @socketio.on('socket_connect')
@@ -276,7 +287,30 @@ def run_freeact_agent(message, project_name, client_sid):
                     # Executa o agente sem injetar um Console customizado.
                     # Isso evita que o objeto seja serializado em chamadas
                     # internas da biblioteca (problema JSON serializable).
-                    turn = agent.run(user_query=message)
+                    try:
+                        # a chamada é bloqueante; executamos em thread e aplicamos timeout
+                        turn = await asyncio.wait_for(
+                            asyncio.to_thread(agent.run, user_query=message),
+                            timeout=FREEACT_TIMEOUT,
+                        )
+                    except asyncio.TimeoutError:
+                        logger.error(
+                            "FreeAct execution exceeded the configured "
+                            f"timeout of {FREEACT_TIMEOUT} s."
+                        )
+                        emit_agent(
+                            "freeact_error",
+                            {
+                                "error": (
+                                    "A execução demorou demais e foi cancelada "
+                                    f"({FREEACT_TIMEOUT} s). Tente simplificar a "
+                                    "pergunta ou aumentar a variável "
+                                    "`FREEACT_TIMEOUT`."
+                                )
+                            },
+                            log=False,
+                        )
+                        return
                     
                     logger.debug(f"FreeAct turn object type: {type(turn)}")
                     logger.debug(f"FreeAct turn object attributes: {dir(turn)}")
