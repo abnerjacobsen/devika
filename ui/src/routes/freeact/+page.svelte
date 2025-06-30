@@ -59,6 +59,8 @@
 
   // Get the selected project from localStorage
   onMount(() => {
+    console.log("[FreeAct] Component mounting, initializing...");
+    
     // Global error handler for uncaught JavaScript errors
     window.onerror = function (message, source, lineno, colno, error) {
       console.error("Global JavaScript Error:", { message, source, lineno, colno, error });
@@ -73,24 +75,46 @@
       return true; // Prevent default browser error handling
     };
 
+    // Add listener for socket connection events
+    socket.on('connect', () => {
+      console.log(`[FreeAct] Socket connected with ID: ${socket.id}`);
+    });
+
+    socket.on('disconnect', () => {
+      console.log('[FreeAct] Socket disconnected');
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('[FreeAct] Socket connection error:', error);
+    });
+
     const load = async () => {
       try {
+        console.log("[FreeAct] Starting load() function...");
+        
         if (!(await checkServerStatus())) {
+          console.error("[FreeAct] Server status check failed");
           toast.error("Failed to connect to server");
           return;
         }
         
+        console.log("[FreeAct] Server status check passed");
         serverStatus.set(true);
         await fetchInitialData();
         
         // Connect socket if not already connected
+        console.log(`[FreeAct] Socket status before connect: connected=${socket.connected}, id=${socket.id}`);
         if (!socket.connected) {
+          console.log("[FreeAct] Socket not connected, connecting now...");
           socket.connect();
         }
+        console.log(`[FreeAct] Socket status after connect: connected=${socket.connected}, id=${socket.id}`);
         
         // Get selected project from localStorage
         selectedProject = localStorage.getItem("selectedProject") || "";
+        console.log(`[FreeAct] Selected project: "${selectedProject}"`);
         if (!selectedProject) {
+          console.warn("[FreeAct] No project selected");
           toast.error("Please select a project first");
         }
 
@@ -98,6 +122,7 @@
         // This prevents "Function called outside component initialization"
         await tick(); // Ensure DOM is ready
         isComponentInitialized = true;
+        console.log("[FreeAct] Initializing agentState with safe defaults");
         agentState.update(current => {
           return {
             ...current,
@@ -107,15 +132,53 @@
         });
 
         // Set up socket listeners for FreeAct
+        console.log("[FreeAct] Registering socket listeners...");
+        
+        console.log("[FreeAct] Registering freeact_status listener");
         socketListener("freeact_status", handleFreeActStatus);
+        
+        console.log("[FreeAct] Registering freeact_error listener");
         socketListener("freeact_error", handleFreeActError);
+        
+        console.log("[FreeAct] Registering freeact_input_request listener");
         socketListener("freeact_input_request", handleFreeActInputRequest);
-        socketListener("freeact_usage", handleFreeActUsage);   // 💬 estatística
+        
+        console.log("[FreeAct] Registering freeact_usage listener");
+        socketListener("freeact_usage", handleFreeActUsage);
 
         // novos eventos específicos
+        console.log("[FreeAct] Registering freeact_model_response listener");
         socketListener("freeact_model_response", handleFreeActModelResponse);
+        
+        console.log("[FreeAct] Registering freeact_code_action listener");
         socketListener("freeact_code_action", handleCodeAction);
+        
+        console.log("[FreeAct] Registering freeact_execution_result listener");
         socketListener("freeact_execution_result", handleExecutionResult);
+        
+        console.log("[FreeAct] All socket listeners registered");
+        
+        // Add direct socket listeners for debugging
+        socket.on('freeact_model_response', (data) => {
+          console.log('[FreeAct] DIRECT SOCKET: Received freeact_model_response event:', data);
+        });
+        
+        socket.on('freeact_code_action', (data) => {
+          console.log('[FreeAct] DIRECT SOCKET: Received freeact_code_action event:', data);
+        });
+        
+        socket.on('freeact_execution_result', (data) => {
+          console.log('[FreeAct] DIRECT SOCKET: Received freeact_execution_result event:', data);
+        });
+        
+        // Log all incoming socket events for debugging
+        const originalOnevent = socket.onevent;
+        socket.onevent = function(packet) {
+          const eventName = packet.data[0];
+          console.log(`[FreeAct] Socket event received: ${eventName}`);
+          originalOnevent.call(this, packet);
+        };
+        
       } catch (error) {
         console.error("Error during FreeAct page initialization:", error);
         toast.error(`Error initializing FreeAct page: ${error.message}`);
@@ -126,9 +189,11 @@
   });
 
   onDestroy(() => {
+    console.log("[FreeAct] Component destroying, cleaning up listeners...");
     // Clean up socket listeners
     if (socket?.connected) {
       try {
+        console.log("[FreeAct] Removing socket listeners...");
         socket.off("freeact_model_response");
         socket.off("freeact_code_action");
         socket.off("freeact_execution_result");
@@ -136,9 +201,15 @@
         socket.off("freeact_error");
         socket.off("freeact_input_request");
         socket.off("freeact_usage");
+        socket.off("connect");
+        socket.off("disconnect");
+        socket.off("connect_error");
+        console.log("[FreeAct] Socket listeners removed");
       } catch (err) {
         console.error("[FreeAct] Error cleaning up socket listeners:", err);
       }
+    } else {
+      console.log("[FreeAct] Socket not connected, no listeners to remove");
     }
     isComponentInitialized = false;
   });
@@ -182,12 +253,14 @@
 
   // Add a visual separator between different FreeAct runs
   function addTerminalSeparator() {
+    console.log("[FreeAct] Adding terminal separator");
     //  ─ looks nicer in most terminals; adjust length if needed
     appendToTerminal("─".repeat(60), "Output");
   }
 
   async function handleCodeAction(data) {
     try {
+      console.log("[FreeAct] handleCodeAction called with data:", data);
       console.debug("[FreeAct] handleCodeAction event", data);
       if (data?.code) await appendToTerminal(data.code, "Code");
     } catch (err) {
@@ -197,6 +270,7 @@
 
   async function handleExecutionResult(data) {
     try {
+      console.log("[FreeAct] handleExecutionResult called with data:", data);
       console.debug("[FreeAct] handleExecutionResult event", data);
       if (data?.result) await appendToTerminal(data.result, "Output");
     } catch (err) {
@@ -218,6 +292,7 @@
 
   // Handle FreeAct messages from WebSocket
   async function handleFreeActModelResponse(data) {
+    console.log("[FreeAct] handleFreeActModelResponse called with data:", data);
     console.debug("[FreeAct] handleFreeActModelResponse event", data);
     try {
       const text = data?.text;
@@ -235,6 +310,7 @@
         messagesContainer.scrollHeight - messagesContainer.scrollTop <=
           messagesContainer.clientHeight + 50;
 
+      console.log("[FreeAct] Updating freeactMessages store with new message");
       freeactMessages.update((msgs) => [
         ...msgs,
         {
@@ -260,6 +336,7 @@
    * e adiciona como uma mensagem do agente, abaixo da resposta.
    */
   async function handleFreeActUsage(data) {
+    console.log("[FreeAct] handleFreeActUsage called with data:", data);
     try {
       const usage = data?.usage || {};
       const text = `Tokens usados: ${usage.total_tokens ?? "?"} (input: ${usage.input_tokens ?? "?"}, output: ${usage.output_tokens ?? "?"})\nCusto: $${usage.cost ?? "?"}`;
@@ -290,6 +367,7 @@
   }
 
   function handleFreeActStatus(data) {
+    console.log("[FreeAct] handleFreeActStatus called with data:", data);
     try {
       const status = data?.status;
       if (!status) return;
@@ -313,6 +391,7 @@
   }
 
   function handleFreeActError(data) {
+    console.log("[FreeAct] handleFreeActError called with data:", data);
     try {
       const error = data?.error || "Unknown error";
       toast.error(`FreeAct error: ${error}`);
@@ -325,6 +404,7 @@
   }
 
   function handleFreeActInputRequest(data) {
+    console.log("[FreeAct] handleFreeActInputRequest called with data:", data);
     try {
       const prompt = data?.prompt || "Input requested";
       toast.info(`FreeAct is requesting input: ${prompt}`);
@@ -336,7 +416,9 @@
 
   // Send message to FreeAct agent
   async function sendMessage() {
+    console.log("[FreeAct] sendMessage called with input:", messageInput);
     if (!messageInput?.trim() || !selectedProject) {
+      console.warn("[FreeAct] Cannot send empty message or no project selected");
       return;
     }
 
@@ -361,7 +443,9 @@
 
       // Get the socket ID for tracking the specific connection
       const socketId = socket?.id;
+      console.log(`[FreeAct] Current socket ID: ${socketId}`);
       if (!socketId) {
+        console.error("[FreeAct] Socket ID not available");
         toast.error("Socket connection not available");
         return;
       }
@@ -369,6 +453,7 @@
       isSending.set(true);
       
       // Send the message to the backend
+      console.log(`[FreeAct] Sending message to backend: ${messageInput}, project: ${selectedProject}, sid: ${socketId}`);
       const response = await fetch(`${API_BASE_URL}/api/freeact-message`, {
         method: "POST",
         headers: {
@@ -385,9 +470,13 @@
         throw new Error("Failed to send message to FreeAct agent");
       }
       
+      const responseData = await response.json();
+      console.log("[FreeAct] Backend response:", responseData);
+      
       // Clear the input field
       messageInput = "";
     } catch (error) {
+      console.error("[FreeAct] Error sending message:", error);
       toast.error(`Error: ${error.message}`);
       isSending.set(false);
     }
