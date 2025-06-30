@@ -31,8 +31,13 @@
    */
   function renderMarkdown(md = "") {
     if (!md) return "";
-    const html = marked.parse(md);
-    return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
+    try {
+      const html = marked.parse(md);
+      return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
+    } catch (err) {
+      console.error("[FreeAct] Error rendering markdown:", err);
+      return md; // Fallback to plain text if markdown parsing fails
+    }
   }
 
   // FreeAct specific stores
@@ -46,38 +51,71 @@
   let messageInput = "";
   let messagesContainer; // Referência ao container de mensagens para scroll
 
+  /* ------------------------------------------------------------------ */
+  /* Agent state initialization with safe defaults                       */
+  /* ------------------------------------------------------------------ */
+  import { agentState } from "$lib/store";
+
   // Get the selected project from localStorage
   onMount(() => {
+    // Global error handler for uncaught JavaScript errors
+    window.onerror = function (message, source, lineno, colno, error) {
+      console.error("Global JavaScript Error:", { message, source, lineno, colno, error });
+      toast.error(`An unexpected error occurred: ${message}`);
+      return true; // Prevent default browser error handling
+    };
+
+    // Global handler for unhandled promise rejections
+    window.onunhandledrejection = function (event) {
+      console.error("Unhandled Promise Rejection:", event.reason);
+      toast.error(`An unhandled promise rejection occurred: ${event.reason}`);
+      return true; // Prevent default browser error handling
+    };
+
+    // Initialize agentState with a safe default structure
+    agentState.update(current => {
+      return {
+        ...current,
+        browser_session: current?.browser_session ?? { url: null, screenshot: null },
+        terminal_session: current?.terminal_session ?? { command: null, output: null, title: "FreeAct Terminal" },
+      };
+    });
+
     const load = async () => {
-      if (!(await checkServerStatus())) {
-        toast.error("Failed to connect to server");
-        return;
-      }
-      
-      serverStatus.set(true);
-      await fetchInitialData();
-      
-      // Connect socket if not already connected
-      if (!socket.connected) {
-        socket.connect();
-      }
-      
-      // Get selected project from localStorage
-      selectedProject = localStorage.getItem("selectedProject") || "";
-      if (!selectedProject) {
-        toast.error("Please select a project first");
-      }
+      try {
+        if (!(await checkServerStatus())) {
+          toast.error("Failed to connect to server");
+          return;
+        }
+        
+        serverStatus.set(true);
+        await fetchInitialData();
+        
+        // Connect socket if not already connected
+        if (!socket.connected) {
+          socket.connect();
+        }
+        
+        // Get selected project from localStorage
+        selectedProject = localStorage.getItem("selectedProject") || "";
+        if (!selectedProject) {
+          toast.error("Please select a project first");
+        }
 
-      // Set up socket listeners for FreeAct
-      socketListener("freeact_status", handleFreeActStatus);
-      socketListener("freeact_error", handleFreeActError);
-      socketListener("freeact_input_request", handleFreeActInputRequest);
-      socketListener("freeact_usage", handleFreeActUsage);   // 💬 estatística
+        // Set up socket listeners for FreeAct
+        socketListener("freeact_status", handleFreeActStatus);
+        socketListener("freeact_error", handleFreeActError);
+        socketListener("freeact_input_request", handleFreeActInputRequest);
+        socketListener("freeact_usage", handleFreeActUsage);   // 💬 estatística
 
-      // novos eventos específicos
-      socketListener("freeact_model_response", handleFreeActModelResponse);
-      socketListener("freeact_code_action", handleCodeAction);
-      socketListener("freeact_execution_result", handleExecutionResult);
+        // novos eventos específicos
+        socketListener("freeact_model_response", handleFreeActModelResponse);
+        socketListener("freeact_code_action", handleCodeAction);
+        socketListener("freeact_execution_result", handleExecutionResult);
+      } catch (error) {
+        console.error("Error during FreeAct page initialization:", error);
+        toast.error(`Error initializing FreeAct page: ${error.message}`);
+      }
     };
 
     load();
@@ -85,59 +123,77 @@
 
   onDestroy(() => {
     // Clean up socket listeners
-    if (socket.connected) {
-      socket.off("freeact_model_response");
-      socket.off("freeact_code_action");
-      socket.off("freeact_execution_result");
-      socket.off("freeact_status");
-      socket.off("freeact_error");
-      socket.off("freeact_input_request");
-      socket.off("freeact_usage");
+    if (socket?.connected) {
+      try {
+        socket.off("freeact_model_response");
+        socket.off("freeact_code_action");
+        socket.off("freeact_execution_result");
+        socket.off("freeact_status");
+        socket.off("freeact_error");
+        socket.off("freeact_input_request");
+        socket.off("freeact_usage");
+      } catch (err) {
+        console.error("[FreeAct] Error cleaning up socket listeners:", err);
+      }
     }
   });
 
   /* ------------------------------------------------------------------ */
   /* Terminal output helper (uses agentState so widget auto-updates)     */
   /* ------------------------------------------------------------------ */
-  import { agentState } from "$lib/store";
-
   function appendToTerminal(text, type = "Output") {
     // DEBUG: track every update to terminal widget
     console.debug("[FreeAct] appendToTerminal", { type, preview: (text ?? "").slice(0, 120) });
-    agentState.update((state) => {
-      const term = state?.terminal_session ?? {
-        command: "",
-        output: "",
-        title: "FreeAct Terminal",
-      };
+    try {
+      agentState.update((state) => {
+        const term = state?.terminal_session ?? {
+          command: "",
+          output: "",
+          title: "FreeAct Terminal",
+        };
 
-      const newOutput =
-        (term.output ? term.output + "\n" : "") +
-        (type === "Code"
-          ? `\n🔧 Code action:\n${text}\n`
-          : `\n✅ Execution result:\n${text}\n`);
+        const newOutput =
+          (term.output ? term.output + "\n" : "") +
+          (type === "Code"
+            ? `\n🔧 Code action:\n${text}\n`
+            : `\n✅ Execution result:\n${text}\n`);
 
-      return {
-        ...state,
-        terminal_session: { ...term, command: type, output: newOutput },
-      };
-    });
+        return {
+          ...state,
+          terminal_session: { ...term, command: type, output: newOutput },
+        };
+      });
+    } catch (err) {
+      console.error("[FreeAct] Error updating terminal:", err);
+    }
   }
 
   function handleCodeAction(data) {
-    console.debug("[FreeAct] handleCodeAction event", data);
-    if (data?.code) appendToTerminal(data.code, "Code");
+    try {
+      console.debug("[FreeAct] handleCodeAction event", data);
+      if (data?.code) appendToTerminal(data.code, "Code");
+    } catch (err) {
+      console.error("[FreeAct] Error handling code action:", err);
+    }
   }
 
   function handleExecutionResult(data) {
-    console.debug("[FreeAct] handleExecutionResult event", data);
-    if (data?.result) appendToTerminal(data.result, "Output");
+    try {
+      console.debug("[FreeAct] handleExecutionResult event", data);
+      if (data?.result) appendToTerminal(data.result, "Output");
+    } catch (err) {
+      console.error("[FreeAct] Error handling execution result:", err);
+    }
   }
 
   // Função para rolar para o final da conversa, quando necessário
   function scrollMessages() {
-    if (messagesContainer) {
-      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    try {
+      if (messagesContainer) {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
+    } catch (err) {
+      console.error("[FreeAct] Error scrolling messages:", err);
     }
   }
 
@@ -183,81 +239,105 @@
    * e adiciona como uma mensagem do agente, abaixo da resposta.
    */
   function handleFreeActUsage(data) {
-    const usage = data.usage || {};
-    const text = `Tokens usados: ${usage.total_tokens ?? "?"} (input: ${usage.input_tokens ?? "?"}, output: ${usage.output_tokens ?? "?"})\nCusto: $${usage.cost ?? "?"}`;
+    try {
+      const usage = data?.usage || {};
+      const text = `Tokens usados: ${usage.total_tokens ?? "?"} (input: ${usage.input_tokens ?? "?"}, output: ${usage.output_tokens ?? "?"})\nCusto: $${usage.cost ?? "?"}`;
 
-    // Verificar se o usuário está próximo do final antes de atualizar
-    const isAtBottom = messagesContainer && 
-      (messagesContainer.scrollHeight - messagesContainer.scrollTop <= messagesContainer.clientHeight + 50);
+      // Verificar se o usuário está próximo do final antes de atualizar
+      const isAtBottom = messagesContainer && 
+        (messagesContainer.scrollHeight - messagesContainer.scrollTop <= messagesContainer.clientHeight + 50);
 
-    freeactMessages.update((msgs) => [
-      ...msgs,
-      {
-        from_devika: true,
-        // Exibe em itálico para diferenciar de uma resposta normal
-        message: `_${text}_`,
-        timestamp: new Date().toISOString(),
-      },
-    ]);
+      freeactMessages.update((msgs) => [
+        ...msgs,
+        {
+          from_devika: true,
+          // Exibe em itálico para diferenciar de uma resposta normal
+          message: `_${text}_`,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
 
-    // Só fazer auto-scroll se o usuário já estiver próximo do final
-    if (isAtBottom) {
-      setTimeout(scrollMessages, 0);
+      // Só fazer auto-scroll se o usuário já estiver próximo do final
+      if (isAtBottom) {
+        setTimeout(scrollMessages, 0);
+      }
+    } catch (err) {
+      console.error("[FreeAct] Error handling usage stats:", err);
     }
   }
 
   function handleFreeActStatus(data) {
-    const status = data.status;
-    freeactStatus.set(status);
-    
-    if (status === "starting") {
-      toast.info("FreeAct agent is starting...");
-      isSending.set(true);
-    } else if (status === "completed") {
-      toast.success("FreeAct agent completed");
+    try {
+      const status = data?.status;
+      if (!status) return;
+      
+      freeactStatus.set(status);
+      
+      if (status === "starting") {
+        toast.info("FreeAct agent is starting...");
+        isSending.set(true);
+      } else if (status === "completed") {
+        toast.success("FreeAct agent completed");
+        isSending.set(false);
+      }
+    } catch (err) {
+      console.error("[FreeAct] Error handling status update:", err);
       isSending.set(false);
     }
   }
 
   function handleFreeActError(data) {
-    const error = data.error;
-    toast.error(`FreeAct error: ${error}`);
-    freeactStatus.set("error");
-    isSending.set(false);
+    try {
+      const error = data?.error || "Unknown error";
+      toast.error(`FreeAct error: ${error}`);
+      freeactStatus.set("error");
+      isSending.set(false);
+    } catch (err) {
+      console.error("[FreeAct] Error handling error event:", err);
+      isSending.set(false);
+    }
   }
 
   function handleFreeActInputRequest(data) {
-    const prompt = data.prompt;
-    toast.info(`FreeAct is requesting input: ${prompt}`);
-    // In a more advanced implementation, we could show a modal for user input
+    try {
+      const prompt = data?.prompt || "Input requested";
+      toast.info(`FreeAct is requesting input: ${prompt}`);
+      // In a more advanced implementation, we could show a modal for user input
+    } catch (err) {
+      console.error("[FreeAct] Error handling input request:", err);
+    }
   }
 
   // Send message to FreeAct agent
   async function sendMessage() {
-    if (!messageInput.trim() || !selectedProject) {
+    if (!messageInput?.trim() || !selectedProject) {
       return;
     }
 
-    // Verificar se o usuário está próximo do final antes de atualizar
-    const isAtBottom = messagesContainer && 
-      (messagesContainer.scrollHeight - messagesContainer.scrollTop <= messagesContainer.clientHeight + 50);
-
-    // Add user message to the conversation
-    freeactMessages.update(msgs => [...msgs, {
-      from_devika: false,
-      message: messageInput,
-      timestamp: new Date().toISOString()
-    }]);
-
-    // Só fazer auto-scroll se o usuário já estiver próximo do final
-    if (isAtBottom) {
-      setTimeout(scrollMessages, 0);
-    }
-
-    // Get the socket ID for tracking the specific connection
-    const socketId = socket.id;
-
     try {
+      // Verificar se o usuário está próximo do final antes de atualizar
+      const isAtBottom = messagesContainer && 
+        (messagesContainer.scrollHeight - messagesContainer.scrollTop <= messagesContainer.clientHeight + 50);
+
+      // Add user message to the conversation
+      freeactMessages.update(msgs => [...msgs, {
+        from_devika: false,
+        message: messageInput,
+        timestamp: new Date().toISOString()
+      }]);
+
+      // Só fazer auto-scroll se o usuário já estiver próximo do final
+      if (isAtBottom) {
+        setTimeout(scrollMessages, 0);
+      }
+
+      // Get the socket ID for tracking the specific connection
+      const socketId = socket?.id;
+      if (!socketId) {
+        toast.error("Socket connection not available");
+        return;
+      }
+
       isSending.set(true);
       
       // Send the message to the backend
@@ -371,7 +451,7 @@
         <button
           class="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
           on:click={sendMessage}
-          disabled={$isSending || !messageInput.trim() || !selectedProject}
+          disabled={$isSending || !messageInput?.trim() || !selectedProject}
         >
           {$isSending ? 'Processing...' : 'Send'}
         </button>
