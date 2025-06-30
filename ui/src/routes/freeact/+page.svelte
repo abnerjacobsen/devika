@@ -458,7 +458,10 @@
 
       <!-- Browser + Terminal widgets (FreeAct specific copies) -->
       <Resizable.Pane class="flex flex-col gap-4 w-full max-w-[50%] p-2">
-        <FreeActBrowserWidget />
+        <!-- <FreeActBrowserWidget /> -->
+        <div class="border border-dashed border-muted p-4 rounded text-sm text-muted-foreground text-center">
+          FreeAct Browser temporarily disabled (debugging)
+        </div>
         <!-- <FreeActTerminalWidget /> -->
         <div class="border border-dashed border-muted p-4 rounded text-sm text-muted-foreground text-center">
           FreeAct Terminal temporarily disabled (debugging)
