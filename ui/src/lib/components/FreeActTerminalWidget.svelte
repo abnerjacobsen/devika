@@ -105,60 +105,6 @@
 
       let previousState = {};
 
-      agentState.subscribe(async (state) => {
-        try {
-          if (state && state.terminal_session) {
-            let command = state.terminal_session.command || 'echo "Waiting..."';
-            let output = state.terminal_session.output || "Waiting...";
-            let title = state.terminal_session.title || "FreeAct Terminal";
-
-            // Check if the current state is different from the previous state
-            if (
-              command !== previousState.command ||
-              output !== previousState.output ||
-              title !== previousState.title
-            ) {
-              // Update title if element exists
-              if (title) {
-                const titleEl = document.getElementById("freeact-terminal-title");
-                if (titleEl) {
-                  titleEl.innerText = title;
-                }
-              }
-              
-              await tick(); // Ensure DOM is ready before updating xterm
-              if (terminal) {
-                terminal.reset();
-                terminal.write(`$ ${command}\r\n\r\n${output}\r\n`);
-              } else {
-                console.warn("[FreeActTerminalWidget] Terminal instance is null, cannot write.");
-              }
-              
-              // Update the previous state
-              previousState = { command, output, title };
-            }
-          } else {
-            // Reset the terminal
-            await tick(); // Ensure DOM is ready
-            if (terminal) {
-              terminal.reset();
-            } else {
-              console.warn("[FreeActTerminalWidget] Terminal instance is null, cannot reset.");
-            }
-          }
-
-          try {
-            if (fitAddon) {
-              fitAddon.fit();
-            }
-          } catch (err) {
-            console.error("[FreeActTerminalWidget] Error fitting terminal in subscribe:", err);
-          }
-        } catch (err) {
-          console.error("[FreeActTerminalWidget] Error in agentState subscribe:", err);
-        }
-      });
-
       // Clean-up observers on component destroy
       onDestroy(() => {
         if (resizeTimeout) {
@@ -175,6 +121,47 @@
       console.error("[FreeActTerminalWidget] Error during terminal initialization:", err);
     }
   });
+
+  /* ------------------------------------------------------------------ */
+  /* Reactive update when agentState.terminal_session changes            */
+  /* ------------------------------------------------------------------ */
+
+  // keep previous state for diffing
+  let previousState = {};
+
+  $: if (terminal && $agentState?.terminal_session) {
+      const { command = 'echo "Waiting..."', output = "Waiting...", title = "FreeAct Terminal" } =
+        $agentState.terminal_session ?? {};
+
+      // detect changes
+      if (
+        command !== previousState.command ||
+        output !== previousState.output ||
+        title !== previousState.title
+      ) {
+        // update title
+        const titleEl = document.getElementById("freeact-terminal-title");
+        if (titleEl) {
+          titleEl.innerText = title;
+        }
+
+        // write to terminal
+        tick().then(() => {
+          if (terminal) {
+            terminal.reset();
+            terminal.write(`$ ${command}\r\n\r\n${output}\r\n`);
+            try {
+              fitAddon?.fit();
+            } catch {/* ignore */}
+          }
+        });
+
+        previousState = { command, output, title };
+      }
+  } else if (terminal && !$agentState?.terminal_session) {
+      // if session cleared, reset terminal once
+      tick().then(() => terminal && terminal.reset());
+  }
 </script>
 
 <div
