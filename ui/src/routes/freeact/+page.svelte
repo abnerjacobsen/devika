@@ -118,45 +118,47 @@
           toast.error("Please select a project first");
         }
 
+        /* ------------------------------------------------------------------ */
+        /* Register socket listeners **before** touching agentState           */
+        /* ------------------------------------------------------------------ */
+        console.log("[FreeAct] Registering socket listeners...");
+
+        socketListener("freeact_status", handleFreeActStatus);
+        socketListener("freeact_error", handleFreeActError);
+        socketListener("freeact_input_request", handleFreeActInputRequest);
+        socketListener("freeact_usage", handleFreeActUsage);
+        socketListener("freeact_model_response", handleFreeActModelResponse);
+        socketListener("freeact_code_action", handleCodeAction);
+        socketListener("freeact_execution_result", handleExecutionResult);
+        console.log("[FreeAct] All socket listeners registered");
+
+        /* --------- DEBUG: log every incoming event once listeners set ------ */
+        const originalOnevent = socket.onevent;
+        socket.onevent = function (packet) {
+          console.log(`[FreeAct] Socket event received: ${packet.data?.[0]}`);
+          originalOnevent.call(this, packet);
+        };
+
         // Initialize agentState with a safe default structure AFTER server check
         // This prevents "Function called outside component initialization"
         await tick(); // Ensure DOM is ready
         isComponentInitialized = true;
         console.log("[FreeAct] Initializing agentState with safe defaults");
-        agentState.update(current => {
-          return {
+        try {
+          agentState.update((current) => ({
             ...current,
-            browser_session: current?.browser_session ?? { url: null, screenshot: null },
-            terminal_session: current?.terminal_session ?? { command: null, output: null, title: "FreeAct Terminal" },
-          };
-        });
-
-        // Set up socket listeners for FreeAct
-        console.log("[FreeAct] Registering socket listeners...");
-        
-        console.log("[FreeAct] Registering freeact_status listener");
-        socketListener("freeact_status", handleFreeActStatus);
-        
-        console.log("[FreeAct] Registering freeact_error listener");
-        socketListener("freeact_error", handleFreeActError);
-        
-        console.log("[FreeAct] Registering freeact_input_request listener");
-        socketListener("freeact_input_request", handleFreeActInputRequest);
-        
-        console.log("[FreeAct] Registering freeact_usage listener");
-        socketListener("freeact_usage", handleFreeActUsage);
-
-        // novos eventos específicos
-        console.log("[FreeAct] Registering freeact_model_response listener");
-        socketListener("freeact_model_response", handleFreeActModelResponse);
-        
-        console.log("[FreeAct] Registering freeact_code_action listener");
-        socketListener("freeact_code_action", handleCodeAction);
-        
-        console.log("[FreeAct] Registering freeact_execution_result listener");
-        socketListener("freeact_execution_result", handleExecutionResult);
-        
-        console.log("[FreeAct] All socket listeners registered");
+            browser_session:
+              current?.browser_session ?? { url: null, screenshot: null },
+            terminal_session:
+              current?.terminal_session ?? {
+                command: null,
+                output: null,
+                title: "FreeAct Terminal",
+              },
+          }));
+        } catch (err) {
+          console.error("[FreeAct] agentState.update error:", err);
+        }
         
         // Add direct socket listeners for debugging
         socket.on('freeact_model_response', (data) => {
