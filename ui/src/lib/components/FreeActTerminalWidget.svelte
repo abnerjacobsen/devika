@@ -2,10 +2,35 @@
   // This is a FreeAct-specific copy of TerminalWidget.svelte
   // It is intended to be modified independently for FreeAct's specific needs.
   import { onMount } from "svelte";
+  import { onDestroy } from "svelte";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { agentState } from "$lib/store"; // Assuming FreeAct will update agentState or a similar store
   import "@xterm/xterm/css/xterm.css";
+
+  // Keep references so they are accessible in helper functions
+  let terminal;
+  let fitAddon;
+
+  /**
+   * Clear the terminal output and reset agentState terminal_session.
+   */
+  function clearTerminal() {
+    if (terminal) {
+      terminal.reset();
+    }
+    agentState.update((state) => {
+      if (!state) return state;
+      return {
+        ...state,
+        terminal_session: {
+          ...(state.terminal_session ?? {}),
+          output: "",
+          command: "",
+        },
+      };
+    });
+  }
 
   onMount(async () => {
     const terminalBg = getComputedStyle(document.body).getPropertyValue(
@@ -15,7 +40,7 @@
       "--terminal-window-foreground"
     );
 
-    const terminal = new Terminal({
+    terminal = new Terminal({
       disableStdin: true,
       cursorBlink: true,
       convertEol: true,
@@ -29,12 +54,28 @@
         selectionBackground: terminalFg
       },
     });
-    const fitAddon = new FitAddon();
+    fitAddon = new FitAddon();
 
     terminal.loadAddon(fitAddon);
     terminal.open(document.getElementById("freeact-terminal-content")); // Changed ID
 
     fitAddon.fit();
+
+    /* -------------------------- Auto-resize support -------------------------- */
+    const contentEl = document.getElementById("freeact-terminal-content");
+    let resizeObserver;
+    if (contentEl) {
+      resizeObserver = new ResizeObserver(() => {
+        // Fit the terminal whenever the container size changes
+        try {
+          fitAddon.fit();
+        } catch (_) {
+          /* ignore */
+        }
+      });
+      resizeObserver.observe(contentEl);
+    }
+
 
     let previousState = {};
 
@@ -69,6 +110,13 @@
 
       fitAddon.fit();
     });
+
+    // Clean-up observers on component destroy
+    onDestroy(() => {
+      if (resizeObserver && contentEl) {
+        resizeObserver.unobserve(contentEl);
+      }
+    });
   });
 </script>
 
@@ -81,7 +129,15 @@
       <div class="w-3 h-3 rounded-full bg-terminal-window-dots"></div>
       <div class="w-3 h-3 rounded-full bg-terminal-window-dots"></div>
     </div>
-    <span id="freeact-terminal-title" class="text-tertiary text-sm">FreeAct Terminal</span> <!-- Changed ID and default text -->
+    <span id="freeact-terminal-title" class="text-tertiary text-sm">FreeAct Terminal</span>
+    <!-- Clear (trash) button -->
+    <button
+      class="ml-auto text-xs hover:text-red-500 focus:outline-none"
+      title="Clear terminal"
+      on:click={clearTerminal}
+    >
+      <i class="fas fa-trash"></i>
+    </button>
   </div>
   <div
     id="freeact-terminal-content"

@@ -168,6 +168,12 @@
     }
   }
 
+  // Add a visual separator between different FreeAct runs
+  function addTerminalSeparator() {
+    //  ─ looks nicer in most terminals; adjust length if needed
+    appendToTerminal("─".repeat(60), "Output");
+  }
+
   function handleCodeAction(data) {
     try {
       console.debug("[FreeAct] handleCodeAction event", data);
@@ -277,6 +283,9 @@
         toast.info("FreeAct agent is starting...");
         isSending.set(true);
       } else if (status === "completed") {
+        // Add a separator after each completed run for better readability
+        addTerminalSeparator();
+
         toast.success("FreeAct agent completed");
         isSending.set(false);
       }
