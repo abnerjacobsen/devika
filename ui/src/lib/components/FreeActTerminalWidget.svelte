@@ -2,7 +2,7 @@
   // This is a FreeAct-specific copy of TerminalWidget.svelte
   // It is intended to be modified independently for FreeAct's specific needs.
   import { onMount } from "svelte";
-  import { onDestroy } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { agentState } from "$lib/store"; // Assuming FreeAct will update agentState or a similar store
@@ -11,112 +11,169 @@
   // Keep references so they are accessible in helper functions
   let terminal;
   let fitAddon;
+  let resizeTimeout;
 
   /**
    * Clear the terminal output and reset agentState terminal_session.
    */
   function clearTerminal() {
-    if (terminal) {
-      terminal.reset();
+    try {
+      if (terminal) {
+        terminal.reset();
+      }
+      agentState.update((state) => {
+        if (!state) return state;
+        return {
+          ...state,
+          terminal_session: {
+            ...(state.terminal_session ?? {}),
+            output: "",
+            command: "",
+          },
+        };
+      });
+    } catch (err) {
+      console.error("[FreeActTerminalWidget] Error clearing terminal:", err);
     }
-    agentState.update((state) => {
-      if (!state) return state;
-      return {
-        ...state,
-        terminal_session: {
-          ...(state.terminal_session ?? {}),
-          output: "",
-          command: "",
-        },
-      };
-    });
   }
 
   onMount(async () => {
-    const terminalBg = getComputedStyle(document.body).getPropertyValue(
-      "--terminal-window-background"
-    );
-    const terminalFg = getComputedStyle(document.body).getPropertyValue(
-      "--terminal-window-foreground"
-    );
+    try {
+      const terminalBg = getComputedStyle(document.body).getPropertyValue(
+        "--terminal-window-background"
+      );
+      const terminalFg = getComputedStyle(document.body).getPropertyValue(
+        "--terminal-window-foreground"
+      );
 
-    terminal = new Terminal({
-      disableStdin: true,
-      cursorBlink: true,
-      convertEol: true,
-      rows: 1,
-      theme: {
-        background: terminalBg,
-        foreground: terminalFg,
-        innerText: terminalFg,
-        cursor: terminalFg,
-        selectionForeground: terminalBg,
-        selectionBackground: terminalFg
-      },
-    });
-    fitAddon = new FitAddon();
-
-    terminal.loadAddon(fitAddon);
-    terminal.open(document.getElementById("freeact-terminal-content")); // Changed ID
-
-    fitAddon.fit();
-
-    /* -------------------------- Auto-resize support -------------------------- */
-    const contentEl = document.getElementById("freeact-terminal-content");
-    let resizeObserver;
-    if (contentEl) {
-      resizeObserver = new ResizeObserver(() => {
-        // Fit the terminal whenever the container size changes
-        try {
-          fitAddon.fit();
-        } catch (_) {
-          /* ignore */
-        }
+      terminal = new Terminal({
+        disableStdin: true,
+        cursorBlink: true,
+        convertEol: true,
+        rows: 1,
+        theme: {
+          background: terminalBg,
+          foreground: terminalFg,
+          innerText: terminalFg,
+          cursor: terminalFg,
+          selectionForeground: terminalBg,
+          selectionBackground: terminalFg
+        },
       });
-      resizeObserver.observe(contentEl);
-    }
+      fitAddon = new FitAddon();
 
-
-    let previousState = {};
-
-    agentState.subscribe((state) => {
-      if (state && state.terminal_session) {
-        let command = state.terminal_session.command || 'echo "Waiting..."';
-        let output = state.terminal_session.output || "Waiting...";
-        let title = state.terminal_session.title || "FreeAct Terminal"; // Changed default title
-
-        // Check if the current state is different from the previous state
-        if (
-          command !== previousState.command ||
-          output !== previousState.output ||
-          title !== previousState.title
-        ) {
-          // Atualiza o título se o elemento existir
-          if (title) {
-            const titleEl = document.getElementById("freeact-terminal-title");
-            if (titleEl) {
-              titleEl.innerText = title;
-            }
-          }
-          terminal.reset();
-          terminal.write(`$ ${command}\r\n\r\n${output}\r\n`);
-          // Update the previous state
-          previousState = { command, output, title };
+      const contentEl = document.getElementById("freeact-terminal-content");
+      if (contentEl) {
+        try {
+          terminal.loadAddon(fitAddon);
+          terminal.open(contentEl);
+        } catch (err) {
+          console.error("[FreeActTerminalWidget] Error opening terminal:", err);
         }
       } else {
-        // Reset the terminal
-        terminal.reset();
+        console.error("[FreeActTerminalWidget] Terminal content element not found.");
       }
 
-      fitAddon.fit();
-    });
-
-    // Clean-up observers on component destroy
-    onDestroy(() => {
-      if (resizeObserver && contentEl) {
-        resizeObserver.unobserve(contentEl);
+      try {
+        if (fitAddon) {
+          fitAddon.fit();
+        }
+      } catch (err) {
+        console.error("[FreeActTerminalWidget] Error fitting terminal on mount:", err);
       }
-    });
+
+      /* -------------------------- Auto-resize support -------------------------- */
+      let resizeObserver;
+      if (contentEl) {
+        resizeObserver = new ResizeObserver(() => {
+          // Debounce resize operations to avoid excessive calls
+          if (resizeTimeout) {
+            clearTimeout(resizeTimeout);
+          }
+          resizeTimeout = setTimeout(() => {
+            try {
+              if (fitAddon) {
+                fitAddon.fit();
+              }
+            } catch (err) {
+              console.error("[FreeActTerminalWidget] Error fitting terminal on resize:", err);
+            }
+          }, 100); // 100ms debounce
+        });
+        resizeObserver.observe(contentEl);
+      }
+
+      let previousState = {};
+
+      agentState.subscribe(async (state) => {
+        try {
+          if (state && state.terminal_session) {
+            let command = state.terminal_session.command || 'echo "Waiting..."';
+            let output = state.terminal_session.output || "Waiting...";
+            let title = state.terminal_session.title || "FreeAct Terminal";
+
+            // Check if the current state is different from the previous state
+            if (
+              command !== previousState.command ||
+              output !== previousState.output ||
+              title !== previousState.title
+            ) {
+              // Update title if element exists
+              if (title) {
+                const titleEl = document.getElementById("freeact-terminal-title");
+                if (titleEl) {
+                  titleEl.innerText = title;
+                }
+              }
+              
+              await tick(); // Ensure DOM is ready before updating xterm
+              if (terminal) {
+                terminal.reset();
+                terminal.write(`$ ${command}\r\n\r\n${output}\r\n`);
+              } else {
+                console.warn("[FreeActTerminalWidget] Terminal instance is null, cannot write.");
+              }
+              
+              // Update the previous state
+              previousState = { command, output, title };
+            }
+          } else {
+            // Reset the terminal
+            await tick(); // Ensure DOM is ready
+            if (terminal) {
+              terminal.reset();
+            } else {
+              console.warn("[FreeActTerminalWidget] Terminal instance is null, cannot reset.");
+            }
+          }
+
+          try {
+            if (fitAddon) {
+              fitAddon.fit();
+            }
+          } catch (err) {
+            console.error("[FreeActTerminalWidget] Error fitting terminal in subscribe:", err);
+          }
+        } catch (err) {
+          console.error("[FreeActTerminalWidget] Error in agentState subscribe:", err);
+        }
+      });
+
+      // Clean-up observers on component destroy
+      onDestroy(() => {
+        if (resizeTimeout) {
+          clearTimeout(resizeTimeout);
+        }
+        if (resizeObserver && contentEl) {
+          resizeObserver.unobserve(contentEl);
+        }
+        if (terminal) {
+          terminal.dispose(); // Dispose xterm.js instance
+        }
+      });
+    } catch (err) {
+      console.error("[FreeActTerminalWidget] Error during terminal initialization:", err);
+    }
   });
 </script>
 

@@ -1,5 +1,5 @@
 <script>
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { toast } from "svelte-sonner";
 
   import MessageContainer from "$lib/components/MessageContainer.svelte";
@@ -55,6 +55,7 @@
   /* Agent state initialization with safe defaults                       */
   /* ------------------------------------------------------------------ */
   import { agentState } from "$lib/store";
+  let isComponentInitialized = false;
 
   // Get the selected project from localStorage
   onMount(() => {
@@ -71,15 +72,6 @@
       toast.error(`An unhandled promise rejection occurred: ${event.reason}`);
       return true; // Prevent default browser error handling
     };
-
-    // Initialize agentState with a safe default structure
-    agentState.update(current => {
-      return {
-        ...current,
-        browser_session: current?.browser_session ?? { url: null, screenshot: null },
-        terminal_session: current?.terminal_session ?? { command: null, output: null, title: "FreeAct Terminal" },
-      };
-    });
 
     const load = async () => {
       try {
@@ -101,6 +93,18 @@
         if (!selectedProject) {
           toast.error("Please select a project first");
         }
+
+        // Initialize agentState with a safe default structure AFTER server check
+        // This prevents "Function called outside component initialization"
+        await tick(); // Ensure DOM is ready
+        isComponentInitialized = true;
+        agentState.update(current => {
+          return {
+            ...current,
+            browser_session: current?.browser_session ?? { url: null, screenshot: null },
+            terminal_session: current?.terminal_session ?? { command: null, output: null, title: "FreeAct Terminal" },
+          };
+        });
 
         // Set up socket listeners for FreeAct
         socketListener("freeact_status", handleFreeActStatus);
@@ -136,15 +140,23 @@
         console.error("[FreeAct] Error cleaning up socket listeners:", err);
       }
     }
+    isComponentInitialized = false;
   });
 
   /* ------------------------------------------------------------------ */
   /* Terminal output helper (uses agentState so widget auto-updates)     */
   /* ------------------------------------------------------------------ */
-  function appendToTerminal(text, type = "Output") {
+  async function appendToTerminal(text, type = "Output") {
     // DEBUG: track every update to terminal widget
     console.debug("[FreeAct] appendToTerminal", { type, preview: (text ?? "").slice(0, 120) });
     try {
+      if (!isComponentInitialized) {
+        console.warn("[FreeAct] Cannot update terminal - component not initialized");
+        return;
+      }
+      
+      await tick(); // Ensure DOM is ready before updating
+      
       agentState.update((state) => {
         const term = state?.terminal_session ?? {
           command: "",
@@ -174,27 +186,28 @@
     appendToTerminal("─".repeat(60), "Output");
   }
 
-  function handleCodeAction(data) {
+  async function handleCodeAction(data) {
     try {
       console.debug("[FreeAct] handleCodeAction event", data);
-      if (data?.code) appendToTerminal(data.code, "Code");
+      if (data?.code) await appendToTerminal(data.code, "Code");
     } catch (err) {
       console.error("[FreeAct] Error handling code action:", err);
     }
   }
 
-  function handleExecutionResult(data) {
+  async function handleExecutionResult(data) {
     try {
       console.debug("[FreeAct] handleExecutionResult event", data);
-      if (data?.result) appendToTerminal(data.result, "Output");
+      if (data?.result) await appendToTerminal(data.result, "Output");
     } catch (err) {
       console.error("[FreeAct] Error handling execution result:", err);
     }
   }
 
   // Função para rolar para o final da conversa, quando necessário
-  function scrollMessages() {
+  async function scrollMessages() {
     try {
+      await tick(); // Ensure DOM is updated
       if (messagesContainer) {
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
       }
@@ -204,7 +217,7 @@
   }
 
   // Handle FreeAct messages from WebSocket
-  function handleFreeActModelResponse(data) {
+  async function handleFreeActModelResponse(data) {
     console.debug("[FreeAct] handleFreeActModelResponse event", data);
     try {
       const text = data?.text;
@@ -214,6 +227,8 @@
         return;
       }
 
+      await tick(); // Ensure DOM is ready
+      
       // Verificar se o usuário está próximo do final antes de atualizar
       const isAtBottom =
         messagesContainer &&
@@ -244,11 +259,13 @@
    * Recebe estatísticas de uso (tokens e custo) vindas do backend
    * e adiciona como uma mensagem do agente, abaixo da resposta.
    */
-  function handleFreeActUsage(data) {
+  async function handleFreeActUsage(data) {
     try {
       const usage = data?.usage || {};
       const text = `Tokens usados: ${usage.total_tokens ?? "?"} (input: ${usage.input_tokens ?? "?"}, output: ${usage.output_tokens ?? "?"})\nCusto: $${usage.cost ?? "?"}`;
 
+      await tick(); // Ensure DOM is ready
+      
       // Verificar se o usuário está próximo do final antes de atualizar
       const isAtBottom = messagesContainer && 
         (messagesContainer.scrollHeight - messagesContainer.scrollTop <= messagesContainer.clientHeight + 50);
@@ -324,6 +341,8 @@
     }
 
     try {
+      await tick(); // Ensure DOM is ready
+      
       // Verificar se o usuário está próximo do final antes de atualizar
       const isAtBottom = messagesContainer && 
         (messagesContainer.scrollHeight - messagesContainer.scrollTop <= messagesContainer.clientHeight + 50);
