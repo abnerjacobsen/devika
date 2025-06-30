@@ -173,14 +173,6 @@
           console.log('[FreeAct] DIRECT SOCKET: Received freeact_execution_result event:', data);
         });
         
-        // Log all incoming socket events for debugging
-        const originalOnevent = socket.onevent;
-        socket.onevent = function(packet) {
-          const eventName = packet.data[0];
-          console.log(`[FreeAct] Socket event received: ${eventName}`);
-          originalOnevent.call(this, packet);
-        };
-        
       } catch (error) {
         console.error("Error during FreeAct page initialization:", error);
         toast.error(`Error initializing FreeAct page: ${error.message}`);
