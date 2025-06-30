@@ -8,7 +8,7 @@
 
   /* FreeAct-specific widgets (copies of the originals) */
   import FreeActBrowserWidget from "$lib/components/FreeActBrowserWidget.svelte";
-  import FreeActTerminalWidget from "$lib/components/FreeActTerminalWidget.svelte";
+  // import FreeActTerminalWidget from "$lib/components/FreeActTerminalWidget.svelte"; // ⬅ disabled for debugging
   import { serverStatus } from "$lib/store";
   import { socketListener, emitMessage } from "$lib/sockets";
   import { checkServerStatus, fetchInitialData } from "$lib/api";
@@ -459,7 +459,10 @@
       <!-- Browser + Terminal widgets (FreeAct specific copies) -->
       <Resizable.Pane class="flex flex-col gap-4 w-full max-w-[50%] p-2">
         <FreeActBrowserWidget />
-        <FreeActTerminalWidget />
+        <!-- <FreeActTerminalWidget /> -->
+        <div class="border border-dashed border-muted p-4 rounded text-sm text-muted-foreground text-center">
+          FreeAct Terminal temporarily disabled (debugging)
+        </div>
       </Resizable.Pane>
     </Resizable.PaneGroup>
   </div>
