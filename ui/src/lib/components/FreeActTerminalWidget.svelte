@@ -2,7 +2,8 @@
   import { onMount, onDestroy } from "svelte";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
-  import { agentState } from "$lib/store";
+  /* Independent store injected by FreeAct page (NOT the global agentState) */
+  export let freeactTerminalState;
   import "@xterm/xterm/css/xterm.css";
 
   // DOM element references using Svelte's bind:this
@@ -16,17 +17,13 @@
 
   // Clear terminal function
   function clearTerminal() {
-    if (terminal) {
-      terminal.reset();
-    }
-    agentState.update((state) => ({
-      ...state,
-      terminal_session: {
-        ...(state?.terminal_session ?? {}),
-        output: "",
-        command: "",
-      },
-    }));
+    if (terminal) terminal.reset();
+    /* Reset the local terminal store – fully independent from home page */
+    freeactTerminalState.set({
+      command: null,
+      output: "",
+      title: "FreeAct Terminal",
+    });
   }
 
   // Initialize terminal on mount
@@ -80,8 +77,12 @@
   // Reactive updates using Svelte's reactive syntax
   let prevState = {};
   
-  $: if (terminal && $agentState?.terminal_session) {
-    const session = $agentState.terminal_session;
+  /* ------------------------------------------------------------------ */
+  /* Reactive update driven by local freeactTerminalState                */
+  /* ------------------------------------------------------------------ */
+
+  $: if (terminal && $freeactTerminalState) {
+    const session = $freeactTerminalState;
     const cmd = session.command || 'echo "Waiting..."';
     const out = session.output || "Waiting...";
     const title = session.title || "FreeAct Terminal";

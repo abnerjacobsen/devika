@@ -1,15 +1,20 @@
 <script>
-  // This is a FreeAct-specific copy of BrowserWidget.svelte
-  // It is intended to be modified independently for FreeAct's specific needs.
-  import { agentState } from "$lib/store";
+  /*
+   * FreeAct-specific Browser widget.
+   * Receives a **local** store (freeactBrowserState) so it is completely
+   * independent from the global `agentState` used by the Home page.
+   */
+  export let freeactBrowserState; // writable store injected by the FreeAct page
   import { API_BASE_URL, socket } from "$lib/api";
 
   socket.on('screenshot', function(msg) {
     const data = msg['data'];
-    const img = document.querySelector('.freeact-browser-img'); // Changed class name
-    if (img) { // Added check to ensure img exists
-      img.src = `data:image/png;base64,${data}`;
-    }
+    // Update the local browser state with the new screenshot (base64 data URI)
+    // so the widget reacts automatically.
+    freeactBrowserState.update(state => ({
+      ...state,
+      screenshot: `data:image/png;base64,${data}`
+    }));
   });
 
 </script>
@@ -26,15 +31,21 @@
       id="freeact-browser-url"
       class="flex-grow h-7 text-xs rounded-lg p-2 overflow-x-auto bg-browser-window-search text-browser-window-foreground"
       placeholder="devika://newtab"
-      value={$agentState?.browser_session.url || ""}
+      value={$freeactBrowserState.url || ""}
     />
   </div>
   <div id="freeact-browser-content" class="flex-grow overflow-y-auto">
     {#if $agentState?.browser_session.screenshot}
-      <img
+    {#if $freeactBrowserState.screenshot}
         class="freeact-browser-img"
         src={API_BASE_URL + "/api/get-browser-snapshot?snapshot_path=" + $agentState?.browser_session.screenshot}
-        alt="Browser snapshot"
+        src={
+          $freeactBrowserState.screenshot.startsWith("data:image")
+            ? $freeactBrowserState.screenshot
+            : API_BASE_URL +
+              "/api/get-browser-snapshot?snapshot_path=" +
+              $freeactBrowserState.screenshot
+        }
       />
     {:else}
       <div class="text-gray-400 text-sm text-center mt-5"><strong>💡 TIP:</strong> FreeAct can browse the web!</div>

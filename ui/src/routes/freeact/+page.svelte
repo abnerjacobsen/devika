@@ -42,42 +42,25 @@
 
   // FreeAct specific stores
   import { writable } from "svelte/store";
-  // Remover afterUpdate que estava forçando scroll sempre
   const freeactMessages = writable([]);
   const freeactStatus = writable("idle"); // idle, active, error
   const isSending = writable(false);
+  
+  // Local independent stores for FreeAct widgets - completely separate from agentState
+  const freeactBrowserState = writable({ 
+    url: null, 
+    screenshot: null 
+  });
+  
+  const freeactTerminalState = writable({ 
+    command: null, 
+    output: null, 
+    title: "FreeAct Terminal" 
+  });
 
   let selectedProject = "";
   let messageInput = "";
   let messagesContainer; // Referência ao container de mensagens para scroll
-
-  /* ------------------------------------------------------------------ */
-  /* Agent state initialization with safe defaults                       */
-  /* ------------------------------------------------------------------ */
-  import { agentState } from "$lib/store";
-  let isComponentInitialized = false;
-  let isFreeActContext = false; // Flag to track if we're in FreeAct context
-
-  /**
-   * Completely resets the agentState to a clean state.
-   * This isolates FreeAct from any state left by HOME page.
-   */
-  function resetAgentState() {
-    console.log("[FreeAct] Completely resetting agentState to clean state");
-    try {
-      // Set a completely fresh state instead of updating existing one
-      agentState.set({
-        // Only include what FreeAct needs, not preserving anything from HOME
-        browser_session: { url: null, screenshot: null },
-        terminal_session: { command: null, output: null, title: "FreeAct Terminal" },
-        // Mark this state as belonging to FreeAct context
-        _freeact_context: true
-      });
-      console.log("[FreeAct] agentState reset complete");
-    } catch (err) {
-      console.error("[FreeAct] Error during agentState reset:", err);
-    }
-  }
 
   // Get the selected project from localStorage
   onMount(() => {
@@ -141,7 +124,7 @@
         }
 
         /* ------------------------------------------------------------------ */
-        /* Register socket listeners **before** touching agentState           */
+        /* Register socket listeners                                           */
         /* ------------------------------------------------------------------ */
         console.log("[FreeAct] Registering socket listeners...");
 
@@ -160,43 +143,6 @@
           console.log(`[FreeAct] Socket event received: ${packet.data?.[0]}`);
           originalOnevent.call(this, packet);
         };
-
-        // FIRST: Reset agentState completely to avoid conflicts with HOME
-        console.log("[FreeAct] Resetting agentState before initialization");
-        resetAgentState();
-
-        // THEN: Initialize agentState with a safe default structure
-        // This prevents "Function called outside component initialization"
-        await tick(); // Ensure DOM is ready
-        isComponentInitialized = true;
-        isFreeActContext = true; // Mark that we're in FreeAct context
-
-        // Use setTimeout to ensure DOM is fully ready
-        setTimeout(() => {
-          try {
-            console.log("[FreeAct] Initializing agentState with safe defaults");
-            // Only update if we're still in FreeAct context
-            if (isFreeActContext) {
-              agentState.update((current) => {
-                // Make sure we have a valid state object
-                const safeState = current || {};
-                return {
-                  ...safeState,
-                  browser_session: { url: null, screenshot: null },
-                  terminal_session: {
-                    command: null,
-                    output: null,
-                    title: "FreeAct Terminal",
-                  },
-                  // Mark as FreeAct context
-                  _freeact_context: true
-                };
-              });
-            }
-          } catch (err) {
-            console.error("[FreeAct] agentState.update error:", err);
-          }
-        }, 100); // Short delay to ensure DOM is ready
         
         // Add direct socket listeners for debugging
         socket.on('freeact_model_response', (data) => {
@@ -222,8 +168,6 @@
 
   onDestroy(() => {
     console.log("[FreeAct] Component destroying, cleaning up listeners...");
-    // Mark that we're leaving FreeAct context
-    isFreeActContext = false;
     
     // Clean up socket listeners
     if (socket?.connected) {
@@ -246,50 +190,43 @@
     } else {
       console.log("[FreeAct] Socket not connected, no listeners to remove");
     }
-    isComponentInitialized = false;
   });
 
   /* ------------------------------------------------------------------ */
-  /* Terminal output helper (uses agentState so widget auto-updates)     */
+  /* Terminal output helper (uses freeactTerminalState for widget)       */
   /* ------------------------------------------------------------------ */
   async function appendToTerminal(text, type = "Output") {
-    // DEBUG: track every update to terminal widget
     console.debug("[FreeAct] appendToTerminal", { type, preview: (text ?? "").slice(0, 120) });
     try {
-      if (!isComponentInitialized || !isFreeActContext) {
-        console.warn("[FreeAct] Cannot update terminal - component not initialized or not in FreeAct context");
-        return;
-      }
-      
       await tick(); // Ensure DOM is ready before updating
       
       // Use setTimeout to ensure DOM is ready
       setTimeout(() => {
         try {
-          agentState.update((state) => {
-            // Extra safety checks
-            if (!state || !isFreeActContext) return state;
-            
-            const term = state?.terminal_session ?? {
+          freeactTerminalState.update((state) => {
+            // Get current state or use defaults
+            const term = state || {
               command: "",
               output: "",
               title: "FreeAct Terminal",
             };
 
+            // Append new output with proper formatting
             const newOutput =
               (term.output ? term.output + "\n" : "") +
               (type === "Code"
                 ? `\n🔧 Code action:\n${text}\n`
                 : `\n✅ Execution result:\n${text}\n`);
 
+            // Return updated state
             return {
-              ...state,
-              terminal_session: { ...term, command: type, output: newOutput },
-              _freeact_context: true // Keep context marker
+              ...term,
+              command: type,
+              output: newOutput,
             };
           });
         } catch (err) {
-          console.error("[FreeAct] Error in setTimeout terminal update:", err);
+          console.error("[FreeAct] Error in terminal update:", err);
         }
       }, 0);
     } catch (err) {
@@ -300,7 +237,6 @@
   // Add a visual separator between different FreeAct runs
   function addTerminalSeparator() {
     console.log("[FreeAct] Adding terminal separator");
-    //  ─ looks nicer in most terminals; adjust length if needed
     appendToTerminal("─".repeat(60), "Output");
   }
 
@@ -593,8 +529,8 @@
 
       <!-- Browser + Terminal widgets (FreeAct specific copies) -->
       <Resizable.Pane class="flex flex-col gap-4 w-full max-w-[50%] p-2">
-        <FreeActBrowserWidget />
-        <FreeActTerminalWidget />
+        <FreeActBrowserWidget freeactBrowserState={freeactBrowserState} />
+        <FreeActTerminalWidget freeactTerminalState={freeactTerminalState} />
       </Resizable.Pane>
     </Resizable.PaneGroup>
   </div>
