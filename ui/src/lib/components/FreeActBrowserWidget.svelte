@@ -35,20 +35,20 @@
     />
   </div>
   <div id="freeact-browser-content" class="flex-grow overflow-y-auto">
-    {#if $agentState?.browser_session.screenshot}
     {#if $freeactBrowserState.screenshot}
+      <img
         class="freeact-browser-img"
-        src={API_BASE_URL + "/api/get-browser-snapshot?snapshot_path=" + $agentState?.browser_session.screenshot}
+        alt="Browser snapshot"
         src={
           $freeactBrowserState.screenshot.startsWith("data:image")
             ? $freeactBrowserState.screenshot
-            : API_BASE_URL +
-              "/api/get-browser-snapshot?snapshot_path=" +
-              $freeactBrowserState.screenshot
+            : `${API_BASE_URL}/api/get-browser-snapshot?snapshot_path=${$freeactBrowserState.screenshot}`
         }
       />
     {:else}
-      <div class="text-gray-400 text-sm text-center mt-5"><strong>💡 TIP:</strong> FreeAct can browse the web!</div>
+      <div class="text-gray-400 text-sm text-center mt-5">
+        <strong>💡 TIP:</strong> FreeAct can browse the web!
+      </div>
     {/if}
   </div>
 </div>
