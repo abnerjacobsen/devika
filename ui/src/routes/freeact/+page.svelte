@@ -56,6 +56,28 @@
   /* ------------------------------------------------------------------ */
   import { agentState } from "$lib/store";
   let isComponentInitialized = false;
+  let isFreeActContext = false; // Flag to track if we're in FreeAct context
+
+  /**
+   * Completely resets the agentState to a clean state.
+   * This isolates FreeAct from any state left by HOME page.
+   */
+  function resetAgentState() {
+    console.log("[FreeAct] Completely resetting agentState to clean state");
+    try {
+      // Set a completely fresh state instead of updating existing one
+      agentState.set({
+        // Only include what FreeAct needs, not preserving anything from HOME
+        browser_session: { url: null, screenshot: null },
+        terminal_session: { command: null, output: null, title: "FreeAct Terminal" },
+        // Mark this state as belonging to FreeAct context
+        _freeact_context: true
+      });
+      console.log("[FreeAct] agentState reset complete");
+    } catch (err) {
+      console.error("[FreeAct] Error during agentState reset:", err);
+    }
+  }
 
   // Get the selected project from localStorage
   onMount(() => {
@@ -139,26 +161,42 @@
           originalOnevent.call(this, packet);
         };
 
-        // Initialize agentState with a safe default structure AFTER server check
+        // FIRST: Reset agentState completely to avoid conflicts with HOME
+        console.log("[FreeAct] Resetting agentState before initialization");
+        resetAgentState();
+
+        // THEN: Initialize agentState with a safe default structure
         // This prevents "Function called outside component initialization"
         await tick(); // Ensure DOM is ready
         isComponentInitialized = true;
-        console.log("[FreeAct] Initializing agentState with safe defaults");
-        try {
-          agentState.update((current) => ({
-            ...current,
-            browser_session:
-              current?.browser_session ?? { url: null, screenshot: null },
-            terminal_session:
-              current?.terminal_session ?? {
-                command: null,
-                output: null,
-                title: "FreeAct Terminal",
-              },
-          }));
-        } catch (err) {
-          console.error("[FreeAct] agentState.update error:", err);
-        }
+        isFreeActContext = true; // Mark that we're in FreeAct context
+
+        // Use setTimeout to ensure DOM is fully ready
+        setTimeout(() => {
+          try {
+            console.log("[FreeAct] Initializing agentState with safe defaults");
+            // Only update if we're still in FreeAct context
+            if (isFreeActContext) {
+              agentState.update((current) => {
+                // Make sure we have a valid state object
+                const safeState = current || {};
+                return {
+                  ...safeState,
+                  browser_session: { url: null, screenshot: null },
+                  terminal_session: {
+                    command: null,
+                    output: null,
+                    title: "FreeAct Terminal",
+                  },
+                  // Mark as FreeAct context
+                  _freeact_context: true
+                };
+              });
+            }
+          } catch (err) {
+            console.error("[FreeAct] agentState.update error:", err);
+          }
+        }, 100); // Short delay to ensure DOM is ready
         
         // Add direct socket listeners for debugging
         socket.on('freeact_model_response', (data) => {
@@ -184,6 +222,9 @@
 
   onDestroy(() => {
     console.log("[FreeAct] Component destroying, cleaning up listeners...");
+    // Mark that we're leaving FreeAct context
+    isFreeActContext = false;
+    
     // Clean up socket listeners
     if (socket?.connected) {
       try {
@@ -215,31 +256,42 @@
     // DEBUG: track every update to terminal widget
     console.debug("[FreeAct] appendToTerminal", { type, preview: (text ?? "").slice(0, 120) });
     try {
-      if (!isComponentInitialized) {
-        console.warn("[FreeAct] Cannot update terminal - component not initialized");
+      if (!isComponentInitialized || !isFreeActContext) {
+        console.warn("[FreeAct] Cannot update terminal - component not initialized or not in FreeAct context");
         return;
       }
       
       await tick(); // Ensure DOM is ready before updating
       
-      agentState.update((state) => {
-        const term = state?.terminal_session ?? {
-          command: "",
-          output: "",
-          title: "FreeAct Terminal",
-        };
+      // Use setTimeout to ensure DOM is ready
+      setTimeout(() => {
+        try {
+          agentState.update((state) => {
+            // Extra safety checks
+            if (!state || !isFreeActContext) return state;
+            
+            const term = state?.terminal_session ?? {
+              command: "",
+              output: "",
+              title: "FreeAct Terminal",
+            };
 
-        const newOutput =
-          (term.output ? term.output + "\n" : "") +
-          (type === "Code"
-            ? `\n🔧 Code action:\n${text}\n`
-            : `\n✅ Execution result:\n${text}\n`);
+            const newOutput =
+              (term.output ? term.output + "\n" : "") +
+              (type === "Code"
+                ? `\n🔧 Code action:\n${text}\n`
+                : `\n✅ Execution result:\n${text}\n`);
 
-        return {
-          ...state,
-          terminal_session: { ...term, command: type, output: newOutput },
-        };
-      });
+            return {
+              ...state,
+              terminal_session: { ...term, command: type, output: newOutput },
+              _freeact_context: true // Keep context marker
+            };
+          });
+        } catch (err) {
+          console.error("[FreeAct] Error in setTimeout terminal update:", err);
+        }
+      }, 0);
     } catch (err) {
       console.error("[FreeAct] Error updating terminal:", err);
     }
